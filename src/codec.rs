@@ -9,20 +9,19 @@
 //! let buffer = cache.read(2, 10)?;
 //!
 //! let decompressed_buffer = codec::decode(&buffer)?;
-//! let compressed_buffer = codec::encode(Compression::Bzip2, &decompressed_buffer, None)?;
+//! //let compressed_buffer = codec::encode(Compression::Bzip2, &decompressed_buffer, None)?; // TODO: No encoding supported in bzip2-rs yet, await this
 //! # Ok(())
 //! # }
 //! ```
 
-use std::convert::TryFrom;
-use std::io::{self, Read, Write};
-
-use bzip2::{read::BzDecoder, write::BzEncoder};
+use bzip2_rs::DecoderReader;
 use flate2::{bufread::GzDecoder, write::GzEncoder};
 use nom::{
     combinator::cond,
     number::complete::{be_i16, be_u32, be_u8},
 };
+use std::convert::TryFrom;
+use std::io::{self, Read, Write};
 
 use crate::{
     error::{CacheError, CompressionError},
@@ -147,7 +146,7 @@ fn encode_internal(
 ) -> crate::Result<Vec<u8>> {
     let mut compressed_data = match compression {
         Compression::None => data.to_owned(),
-        Compression::Bzip2 => compress_bzip2(data)?,
+        Compression::Bzip2 => todo!(), //compress_bzip2(data)?,
         Compression::Gzip => compress_gzip(data)?,
     };
 
@@ -217,6 +216,9 @@ fn decode_internal(buffer: &[u8], keys: Option<&[u32; 4]>) -> crate::Result<Deco
     })
 }
 
+/*
+TODO: Disabled while bzip2-rs does not have encoding support.
+This should be enabled once bzip2-rs has support for it (it is an upcoming feature as per their README)
 fn compress_bzip2(data: &[u8]) -> io::Result<Vec<u8>> {
     let mut compressor = BzEncoder::new(Vec::new(), bzip2::Compression::fast());
     compressor.write_all(data)?;
@@ -224,7 +226,7 @@ fn compress_bzip2(data: &[u8]) -> io::Result<Vec<u8>> {
     compressed_data.drain(..4);
 
     Ok(compressed_data)
-}
+}*/
 
 fn compress_gzip(data: &[u8]) -> io::Result<Vec<u8>> {
     let mut compressor = GzEncoder::new(Vec::new(), flate2::Compression::best());
@@ -251,7 +253,7 @@ fn decompress_bzip2(buffer: &[u8], len: usize) -> crate::Result<(usize, Option<i
 
     let (_, version) = cond(buffer.len() - len >= 2, be_i16)(buffer)?;
 
-    let mut decompressor = BzDecoder::new(compressed_data.as_slice());
+    let mut decompressor = DecoderReader::new(compressed_data.as_slice());
     let mut decompressed_data = vec![0; decompressed_len as usize];
     decompressor.read_exact(&mut decompressed_data)?;
 
