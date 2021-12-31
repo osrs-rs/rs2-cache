@@ -164,8 +164,8 @@ impl<'a> Checksum<'a> {
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
 #[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct RsaKeys<'a> {
-    pub(crate) exponent: &'a [u8],
-    pub(crate) modulus: &'a [u8],
+    pub exponent: &'a [u8],
+    pub modulus: &'a [u8],
 }
 
 impl<'a> RsaKeys<'a> {

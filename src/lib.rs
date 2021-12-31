@@ -116,8 +116,8 @@ mod sector;
 #[doc(inline)]
 pub use error::{CacheError, Result};
 
-pub(crate) const MAIN_DATA: &str = "main_file_cache.dat2";
-pub(crate) const REFERENCE_TABLE: u8 = 255;
+pub const MAIN_DATA: &str = "main_file_cache.dat2";
+pub const REFERENCE_TABLE: u8 = 255;
 
 use std::{fs::File, io::Write, path::Path};
 
@@ -134,7 +134,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Cache {
     data: Mmap,
-    pub(crate) indices: Indices,
+    pub indices: Indices,
 }
 
 impl Cache {
@@ -190,7 +190,7 @@ impl Cache {
         Ok(buffer)
     }
 
-    pub(crate) fn read_archive(&self, archive: &ArchiveRef) -> crate::Result<Vec<u8>> {
+    pub fn read_archive(&self, archive: &ArchiveRef) -> crate::Result<Vec<u8>> {
         self.read(archive.index_id, archive.id)
     }
 
@@ -235,7 +235,7 @@ impl Cache {
         codec::decode(&buffer)
     }
 
-    pub(crate) fn archive_by_name<T: AsRef<str>>(
+    pub fn archive_by_name<T: AsRef<str>>(
         &self,
         index_id: u8,
         name: T,
@@ -261,7 +261,7 @@ impl Cache {
     }
 }
 
-pub(crate) trait ReadInternal {
+pub trait ReadInternal {
     fn read_internal<W: Write>(&self, archive: &ArchiveRef, writer: &mut W) -> crate::Result<()>;
 }
 
