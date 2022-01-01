@@ -1,6 +1,8 @@
 mod common;
 
 mod osrs {
+    const REGION_GRID_LUMBRIDGE: u16 = 12850;
+
     use super::common;
 
     use osrscache::loader::osrs::LocationLoader;
@@ -8,10 +10,11 @@ mod osrs {
     fn load_locations() -> osrscache::Result<()> {
         let cache = common::osrs::setup()?;
 
-        let keys: [u32; 4] = [3030157619, 2364842415, 3297319647, 1973582566];
+        // XTEA keys
+        let keys: [u32; 4] = [1766500218, 1050654932, 397022681, 1618041309];
 
         let mut location_loader = LocationLoader::new(&cache);
-        let location_def = location_loader.load(12850, &keys)?;
+        let location_def = location_loader.load(REGION_GRID_LUMBRIDGE, &keys)?;
 
         assert_eq!(location_def.region_x, 50);
         assert_eq!(location_def.region_y, 50);

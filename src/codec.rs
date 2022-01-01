@@ -55,7 +55,6 @@ pub enum Compression {
 /// let decoded = DecodedBuffer::try_from(buffer.as_slice())?;
 ///
 /// assert_eq!(decoded.compression, Compression::Bzip2);
-/// assert_eq!(decoded.len, 886570);
 /// assert_eq!(decoded.version, Some(12609));
 /// # Ok(())
 /// # }

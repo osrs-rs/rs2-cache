@@ -17,13 +17,13 @@ mod osrs {
     }
 
     #[test]
-    fn load_last_npc() -> osrscache::Result<()> {
+    fn load_tool_leprechaun() -> osrscache::Result<()> {
         let cache = common::osrs::setup()?;
         let npc_loader = common::osrs::load_npcs(&cache)?;
 
-        let npc = npc_loader.load(8691).unwrap();
+        let npc = npc_loader.load(0).unwrap();
 
-        assert_eq!(npc.name, "Mosol Rei");
+        assert_eq!(npc.name, "Tool Leprechaun");
         assert!(npc.interactable);
 
         Ok(())

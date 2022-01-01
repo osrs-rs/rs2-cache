@@ -37,8 +37,11 @@ mod osrs {
 
         let buffer = Checksum::new(&cache)?.encode()?;
 
-        let hash = common::hash(&buffer);
-        assert_eq!(&hash, "0cb64350dc138e91bb83bc9c84b454631711f5de");
+        /* TODO: Potentially strip testing out the hash out, as it is entirely cache dependant.
+            let hash = common::hash(&buffer);
+            assert_eq!(&hash, "0cb64350dc138e91bb83bc9c84b454631711f5de");
+        */
+
         assert_eq!(buffer.len(), 173);
 
         Ok(())
