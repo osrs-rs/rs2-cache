@@ -5,7 +5,7 @@
 //! use osrscache::codec::{ self, Compression };
 //!
 //! # fn main() -> osrscache::Result<()> {
-//! # let cache = Cache::new("./data/osrs_cache")?;
+//! # let cache = Cache::new("./data/cache")?;
 //! let buffer = cache.read(2, 10)?;
 //!
 //! let decompressed_buffer = codec::decode(&buffer)?;
@@ -50,7 +50,7 @@ pub enum Compression {
 /// use std::convert::TryFrom;
 ///
 /// # fn main() -> osrscache::Result<()> {
-/// # let cache = Cache::new("./data/osrs_cache")?;
+/// # let cache = Cache::new("./data/cache")?;
 /// let buffer = cache.read(2, 10)?;
 /// let decoded = DecodedBuffer::try_from(buffer.as_slice())?;
 ///
@@ -69,7 +69,7 @@ pub enum Compression {
 /// # use osrscache::codec::DecodedBuffer;
 /// # use std::convert::TryFrom;
 /// # fn main() -> osrscache::Result<()> {
-/// # let cache = Cache::new("./data/osrs_cache")?;
+/// # let cache = Cache::new("./data/cache")?;
 /// let buffer = cache.read(2, 10)?;
 /// let decoded = DecodedBuffer::try_from(buffer.as_slice())?;
 ///

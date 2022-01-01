@@ -81,7 +81,7 @@ pub trait FetchDefinition: Definition {
     /// };
     ///
     /// # fn main() -> osrscache::Result<()> {
-    /// # let cache = Cache::new("./data/osrs_cache")?;
+    /// # let cache = Cache::new("./data/cache")?;
     /// let index_id = 2; // Config index.
     /// let archive_id = 10; // Archive containing item definitions.
     ///

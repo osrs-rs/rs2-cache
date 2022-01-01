@@ -16,7 +16,7 @@ pub mod osrs {
         InventoryLoader, ItemLoader, NpcLoader, ObjectLoader, VarbitLoader,
     };
     pub fn setup() -> osrscache::Result<Cache> {
-        Cache::new("./data/osrs_cache")
+        Cache::new("./data/cache")
     }
 
     pub fn load_items(cache: &Cache) -> osrscache::Result<ItemLoader> {

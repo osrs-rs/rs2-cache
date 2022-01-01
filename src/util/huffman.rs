@@ -7,7 +7,7 @@
 /// use osrscache::util::Huffman;
 ///
 /// # fn main() -> osrscache::Result<()> {
-/// # let cache = Cache::new("./data/osrs_cache")?;
+/// # let cache = Cache::new("./data/cache")?;
 /// let huffman_tbl = cache.huffman_table()?;
 /// let huffman = Huffman::new(&huffman_tbl);
 ///

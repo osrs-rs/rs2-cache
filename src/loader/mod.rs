@@ -13,7 +13,7 @@
 //! };
 //!
 //! fn main() -> osrscache::Result<()> {
-//!     let cache = Cache::new("./data/osrs_cache")?;
+//!     let cache = Cache::new("./data/cache")?;
 //!     let custom_loader = CustomLoader::new(&cache)?;
 //!     let definition = custom_loader.load(1042);
 //!

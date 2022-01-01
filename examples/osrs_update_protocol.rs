@@ -12,7 +12,7 @@ const DATA_LEN: usize = 512;
 // This example illustrates the osrs update protocol.
 // You can use this to handle client requests for cache data.
 fn main() -> osrscache::Result<()> {
-    let cache = Cache::new("./data/osrs_cache")?;
+    let cache = Cache::new("./data/cache")?;
 
     // The client would send a packet that would look something like this:
     let packet = IncomingUpdatePacket {

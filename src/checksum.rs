@@ -7,7 +7,7 @@
 //! use osrscache::checksum::{Checksum};
 //!
 //! # fn main() -> osrscache::Result<()> {
-//! # let cache = Cache::new("./data/osrs_cache")?;
+//! # let cache = Cache::new("./data/cache")?;
 //! let checksum = Checksum::new(&cache)?;
 //!
 //! // Encode the checksum with the OSRS protocol.
