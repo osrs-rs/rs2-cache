@@ -4,7 +4,7 @@
 [![API](https://docs.rs/osrs-cache/badge.svg)](https://docs.rs/osrs-cache)
 [![Crate](https://img.shields.io/crates/v/osrs-cache)](https://crates.io/crates/osrs-cache)
 [![dependency status](https://deps.rs/repo/github/runecore/osrs-cache/status.svg)](https://deps.rs/repo/github/runecore/osrs-cache)
-[![OSRS Version](https://img.shields.io/badge/OSRS-189-blue)]()
+[![OSRS Version](https://img.shields.io/badge/OSRS-189-blue)](https://img.shields.io/badge/OSRS-189-blue)
 
 An immutable, high-level API for the Oldschool RuneScape cache file system.
 
