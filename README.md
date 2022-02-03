@@ -17,7 +17,7 @@ Add this to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-osrs-cache = "0.1.0"
+osrs-cache = "0.2.1"
 ```
 
 ## Example
