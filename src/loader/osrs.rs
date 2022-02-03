@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     definition::osrs::{
-        Definition, FetchDefinition, ItemDefinition, LocationDefinition, MapDefinition,
-        NpcDefinition, ObjectDefinition,
+        Definition, FetchDefinition, InventoryDefinition, ItemDefinition, LocationDefinition,
+        MapDefinition, NpcDefinition, ObjectDefinition, VarbitDefinition,
     },
     Cache,
 };
@@ -34,6 +34,20 @@ impl_osrs_loader!(NpcLoader, NpcDefinition, index_id: 2, archive_id: 9);
 pub struct ObjectLoader(HashMap<u16, ObjectDefinition>);
 
 impl_osrs_loader!(ObjectLoader, ObjectDefinition, index_id: 2, archive_id: 6);
+
+/// Loads all inventory definitions from the current cache.
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
+pub struct InventoryLoader(HashMap<u16, InventoryDefinition>);
+
+impl_osrs_loader!(InventoryLoader, InventoryDefinition, index_id: 2, archive_id: 5);
+
+/// Loads all varbit definitions from the current cache.
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
+pub struct VarbitLoader(HashMap<u16, VarbitDefinition>);
+
+impl_osrs_loader!(VarbitLoader, VarbitDefinition, index_id: 2, archive_id: 14);
 
 /// Loads maps definitions lazily from the current cache.
 #[derive(Debug)]
@@ -180,30 +194,30 @@ mod npcs {
     fn woodsman_tutor() -> crate::Result<()> {
         let npc_loader = npc_loader()?;
         let npc = npc_loader.load(3226).unwrap();
-        
+
         assert_eq!(npc.name, "Woodsman tutor");
         assert!(npc.interactable);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn last_valid_npc() -> crate::Result<()> {
         let npc_loader = npc_loader()?;
         let npc = npc_loader.load(8691).unwrap();
-        
+
         assert_eq!(npc.name, "Ancient Fungi");
         assert!(npc.interactable);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn non_existent() -> crate::Result<()> {
         let npc_loader = npc_loader()?;
-        
+
         assert!(npc_loader.load(65_535).is_none());
-        
+
         Ok(())
     }
 }
@@ -221,51 +235,51 @@ mod objects {
     fn law_rift() -> crate::Result<()> {
         let obj_loader = obj_loader()?;
         let obj = obj_loader.load(25034).unwrap();
-        
+
         assert_eq!(obj.name, "Law rift");
         assert_eq!(obj.animation_id, 2178);
         assert!(obj.solid);
         assert!(!obj.obstruct_ground);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn furnace() -> crate::Result<()> {
         let obj_loader = obj_loader()?;
         let obj = obj_loader.load(2030).unwrap();
-        
+
         assert_eq!(obj.name, "Furnace");
         assert!(obj.solid);
         assert!(!obj.obstruct_ground);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn bank_table() -> crate::Result<()> {
         let obj_loader = obj_loader()?;
         let obj = obj_loader.load(590).unwrap();
-        
+
         assert_eq!(obj.name, "Bank table");
         assert_eq!(obj.supports_items, Some(1));
         assert!(obj.solid);
         assert!(!obj.obstruct_ground);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn dungeon_door() -> crate::Result<()> {
         let obj_loader = obj_loader()?;
         let obj = obj_loader.load(1725).unwrap();
-        
+
         assert_eq!(obj.name, "Dungeon door");
         assert_eq!(obj.wall_or_door, Some(1));
         assert_eq!(obj.supports_items, Some(0));
         assert!(obj.solid);
         assert!(!obj.obstruct_ground);
-        
+
         Ok(())
     }
 }
@@ -278,17 +292,17 @@ mod locations {
     #[test]
     fn lumbridge() -> crate::Result<()> {
         let cache = test_util::osrs_cache()?;
-        
+
         let keys: [u32; 4] = [1766500218, 1050654932, 397022681, 1618041309];
-        
+
         let mut location_loader = LocationLoader::new(&cache);
         let location_def = location_loader.load(12850, &keys)?;
-        
+
         assert_eq!(location_def.region_x, 50);
         assert_eq!(location_def.region_y, 50);
         assert_eq!(location_def.region_base_coords(), (3200, 3200));
         assert_eq!(location_def.data.len(), 4730);
-        
+
         Ok(())
     }
 }
@@ -312,4 +326,41 @@ mod maps {
         Ok(())
     }
 }
-    
+
+#[cfg(test)]
+mod inventory {
+    use super::InventoryLoader;
+    use crate::test_util;
+
+    #[test]
+    fn load_player_backpack() -> crate::Result<()> {
+        let cache = test_util::osrs_cache()?;
+        let inventory_loader = InventoryLoader::new(&cache)?;
+
+        let inventory = inventory_loader.load(93).unwrap();
+
+        assert_eq!(28, inventory.capacity.unwrap());
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod varbits {
+    use super::VarbitLoader;
+    use crate::test_util;
+
+    #[test]
+    fn load_sample_varbit() -> crate::Result<()> {
+        let cache = test_util::osrs_cache()?;
+        let varbit_loader = VarbitLoader::new(&cache)?;
+
+        let chatbox_varbit = varbit_loader.load(8119).unwrap();
+
+        assert_eq!(1737, chatbox_varbit.varp_id);
+        assert_eq!(31, chatbox_varbit.least_significant_bit);
+        assert_eq!(31, chatbox_varbit.most_significant_bit);
+
+        Ok(())
+    }
+}
