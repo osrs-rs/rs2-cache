@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io, io::BufReader};
 
-#[cfg(feature = "serde-derive")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::Definition;
@@ -8,8 +8,8 @@ use crate::{extension::ReadExt, util};
 
 /// Contains all the information about a certain npc fetched from the cache through
 /// the [NpcLoader](../../loader/osrs/struct.NpcLoader.html).
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct NpcDefinition {
     pub id: u16,
     pub name: String,
@@ -27,8 +27,8 @@ pub struct NpcDefinition {
     pub animation_data: NpcAnimationData,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct NpcModelData {
     pub models: Vec<u16>,
     pub chat_head_models: Vec<u16>,
@@ -46,8 +46,8 @@ pub struct NpcModelData {
     pub rotate_flag: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct NpcAnimationData {
     pub standing: Option<u16>,
     pub walking: Option<u16>,

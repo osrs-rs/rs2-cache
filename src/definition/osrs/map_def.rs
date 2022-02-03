@@ -1,6 +1,6 @@
 use std::{io, io::BufReader};
 
-#[cfg(feature = "serde-derive")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::Definition;
@@ -12,16 +12,16 @@ const Z: usize = 4;
 
 /// Contains all the information about a certain map fetched from the cache through
 /// the [MapLoader](../../loader/osrs/struct.MapLoader.html).
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct MapDefinition {
     pub region_x: u16,
     pub region_y: u16,
     pub data: Vec<Vec<Vec<MapData>>>,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct MapData {
     pub height: u8,
     pub attr_opcode: u8,
@@ -49,6 +49,7 @@ impl MapDefinition {
         &self.data[z][x][y]
     }
 
+    #[inline]
     pub const fn region_base_coords(&self) -> (u16, u16) {
         (self.region_x << 6, self.region_y << 6)
     }

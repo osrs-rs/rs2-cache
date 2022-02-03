@@ -1,12 +1,12 @@
 use super::Definition;
 use crate::extension::ReadExt;
-#[cfg(feature = "serde-derive")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::io::BufReader;
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct InventoryDefinition {
     pub id: u16,
     pub capacity: Option<u16>,

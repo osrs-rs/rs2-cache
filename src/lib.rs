@@ -1,4 +1,4 @@
-//! An immutable, high-level API for the RuneScape cache file system.
+//! A read-only, high-level, virtual file API for the RuneScape cache.
 //!
 //! This crate provides high performant data reads into the [Oldschool RuneScape] and [RuneScape 3] cache file systems.
 //! It can read the necessary data to synchronize the client's cache with the server. There are also some
@@ -15,7 +15,7 @@
 //! the server has its own `IsaacRand` with the same encoder/decoder keys. These keys are sent by the client
 //! on login and are user specific. It will only send encoded packet id's if the packets are game packets.
 //!
-//! Note that this crate is still evolving; OSRS is not fully supported/implemented and
+//! Note that this crate is still evolving; both OSRS & RS3 are not fully supported/implemented and
 //! will probably contain bugs or miss core features. If you require features or find bugs consider [opening
 //! an issue].
 //!
@@ -29,7 +29,7 @@
 //!
 //! # Features
 //!
-//! The cache's protocol defaults to OSRS.
+//! The cache's protocol defaults to OSRS. In order to use the RS3 protocol you can enable the `rs3` feature flag.
 //! A lot of types derive [serde]'s `Serialize` and `Deserialize`. The `serde-derive` feature flag can be used to
 //! enable (de)serialization on any compatible types.
 //!
@@ -38,13 +38,13 @@
 //! ```
 //! use osrscache::Cache;
 //!
-//! # fn main() -> osrscache::Result<()> {
-//! let cache = Cache::new("./data/cache")?;
+//! # fn main() -> Result<(), osrscache::Error> {
+//! let cache = Cache::new("./data/osrs_cache")?;
 //!
 //! let index_id = 2; // Config index.
 //! let archive_id = 10; // Archive containing item definitions.
 //!
-//! let buffer: Vec<u8> = cache.read(index_id, archive_id)?;
+//! let buffer = cache.read(index_id, archive_id)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -66,145 +66,120 @@
 //! [memmap2]: https://crates.io/crates/memmap2
 //! [`Huffman`]: crate::util::Huffman
 //! [`IsaacRand`]: crate::util::IsaacRand
-
-#![deny(clippy::all, clippy::nursery)]
-#![warn(
-    clippy::clone_on_ref_ptr,
-    clippy::redundant_clone,
-    clippy::default_trait_access,
-    clippy::expl_impl_clone_on_copy,
-    clippy::explicit_into_iter_loop,
-    clippy::explicit_iter_loop,
-    clippy::manual_filter_map,
-    clippy::filter_map_next,
-    clippy::manual_find_map,
-    clippy::get_unwrap,
-    clippy::items_after_statements,
-    clippy::large_digit_groups,
-    clippy::map_flatten,
-    clippy::match_same_arms,
-    clippy::maybe_infinite_iter,
-    clippy::mem_forget,
-    clippy::multiple_inherent_impl,
-    clippy::mut_mut,
-    clippy::needless_continue,
-    clippy::needless_pass_by_value,
-    clippy::map_unwrap_or,
-    clippy::unused_self,
-    clippy::similar_names,
-    clippy::single_match_else,
-    clippy::too_many_lines,
-    clippy::type_repetition_in_bounds,
-    clippy::unseparated_literal_suffix,
-    clippy::used_underscore_binding,
-    clippy::should_implement_trait,
-    clippy::no_effect
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![deny(
+    clippy::all,
+    clippy::correctness,
+    clippy::suspicious,
+    clippy::style,
+    clippy::complexity,
+    clippy::perf
 )]
+
 #[macro_use]
 pub mod util;
-mod archive;
 pub mod checksum;
-pub mod codec;
 pub mod definition;
 pub mod error;
 pub mod extension;
-mod index;
 pub mod loader;
-pub mod parse;
-mod sector;
 
 #[doc(inline)]
-pub use error::{CacheError, Result};
+pub use error::Error;
+use error::Result;
 
-pub const MAIN_DATA: &str = "main_file_cache.dat2";
-pub const REFERENCE_TABLE: u8 = 255;
+use checksum::Checksum;
+#[cfg(feature = "rs3")]
+use checksum::{RsaChecksum, RsaKeys};
+use runefs::codec::{Buffer, Decoded, Encoded};
+use runefs::error::{Error as RuneFsError, ReadError};
+use runefs::{ArchiveRef, Dat2, Indices, MAIN_DATA};
+use std::{io::Write, path::Path};
 
-use std::{fs::File, io::Write, path::Path};
-
-use memmap2::Mmap;
-
-use crate::{
-    archive::ArchiveRef,
-    error::{ParseError, ReadError},
-    index::Indices,
-    sector::{Sector, SECTOR_SIZE},
-};
-
-/// A parsed Jagex cache.
+/// A complete virtual representation of the RuneScape cache file system.
 #[derive(Debug)]
 pub struct Cache {
-    data: Mmap,
-    pub indices: Indices,
+    data: Dat2,
+    pub(crate) indices: Indices,
 }
 
 impl Cache {
-    /// Constructs a new `Cache`.
-    ///
-    /// Each valid index is parsed and stored, and in turn all archive references as well.
-    /// If an index is not present it will simply be skipped.
-    /// However, the main data file and reference table both are required.
+    /// Creates a high level virtual memory map over the cache directory.
+    /// 
+    /// All files are isolated on allocation by keeping them as in-memory files.
     ///
     /// # Errors
     ///
-    /// If this function encounters any form of I/O or other error, a `CacheError`
-    /// is returned which wraps the underlying error.
-
+    /// The bulk of the errors which might occur are mostely I/O related due to acquiring 
+    /// file handles.
+    /// 
+    /// Other errors might include protocol changes in newer caches.
+    /// Any error unrelated to I/O at this stage should be considered a bug.
     pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        let path = path.as_ref();
-        let main_file = File::open(path.join(MAIN_DATA))?;
-
-        let data = unsafe { Mmap::map(&main_file)? };
-        let indices = Indices::new(path, &data)?;
-
-        Ok(Self { data, indices })
+        Ok(Self {
+            data: Dat2::new(path.as_ref().join(MAIN_DATA))?,
+            indices: Indices::new(path)?,
+        })
     }
 
-    /// Reads from the internal data.
-    ///
-    /// A lookup is performed on the specified index to find the sector id and the total length
-    /// of the buffer that needs to be read from the `main_file_cache.dat2`.
-    ///
-    /// If the lookup is successfull the data is gathered into a `Vec<u8>`.
+    /// Generate a checksum based on the current cache.
+    /// 
+    /// The `Checksum` acts as a validator for individual cache files.
+    /// Any RuneScape client will request a list of crc's to check the validity
+    /// of all of the file data that was transferred.
+    pub fn checksum(&self) -> crate::Result<Checksum> {
+        Checksum::new(self)
+    }
+
+    /// Generate a checksum based on the current cache with RSA encryption.
+    /// 
+    /// `RsaChecksum` wraps a regular `Checksum` with the added benefit of encrypting
+    /// the whirlpool hash into the checksum buffer.
+    #[cfg(feature = "rs3")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rs3")))]
+    pub fn checksum_with<'a>(&self, keys: RsaKeys<'a>) -> crate::Result<RsaChecksum<'a>> {
+        RsaChecksum::with_keys(self, keys)
+    }
+
+    /// Retrieves and constructs data corresponding to the given index and archive.
     ///
     /// # Errors
     ///
-    /// Returns an `IndexNotFound` error if the specified `index_id` is not a valid `Index`.\
-    /// Returns an `ArchiveNotFound` error if the specified `archive_id` is not a valid `Archive`.
-
-    pub fn read(&self, index_id: u8, archive_id: u32) -> crate::Result<Vec<u8>> {
+    /// When trying to retrieve data from an index or an archive that does not exist 
+    /// the `IndexNotFound` or `ArchiveNotFound` errors are returned, respectively.
+    /// 
+    /// Any other errors such as sector validation failures or failed parsers should
+    /// be considered a bug.
+    pub fn read(&self, index_id: u8, archive_id: u32) -> crate::Result<Buffer<Encoded>> {
         let index = self
             .indices
             .get(&index_id)
-            .ok_or(ReadError::IndexNotFound(index_id))?;
+            .ok_or(RuneFsError::Read(ReadError::IndexNotFound(index_id)))?;
 
         let archive = index
             .archive_refs
             .get(&archive_id)
-            .ok_or(ReadError::ArchiveNotFound(index_id, archive_id))?;
+            .ok_or(RuneFsError::Read(ReadError::ArchiveNotFound {
+                idx: index_id,
+                arc: archive_id,
+            }))?;
 
-        let mut buffer = Vec::with_capacity(archive.length);
-        self.data.read_internal(archive, &mut buffer)?;
+        let buffer = self.data.read(archive)?;
 
         assert_eq!(buffer.len(), archive.length);
 
         Ok(buffer)
     }
 
-    pub fn read_archive(&self, archive: &ArchiveRef) -> crate::Result<Vec<u8>> {
+    pub(crate) fn read_archive(&self, archive: &ArchiveRef) -> crate::Result<Buffer<Encoded>> {
         self.read(archive.index_id, archive.id)
     }
 
-    /// Reads bytes from the cache into the given writer.
-    ///
-    /// For read-heavy workloads it is recommended to use this version of read to prevent
-    /// multiple buffer allocations, instead it will not allocate a buffer but use the writer
-    /// instead, see [`read`](Cache::read).
+    /// Retrieves and writes data corresponding to the given index and archive into `W`.
     ///
     /// # Errors
     ///
-    /// Returns an `IndexNotFound` error if the specified `index_id` is not a valid `Index`.\
-    /// Returns an `ArchiveNotFound` error if the specified `archive_id` is not a valid `Archive`.
-
+    /// See the error section on [`read`](Cache::read) for more details.
     pub fn read_into_writer<W: Write>(
         &self,
         index_id: u8,
@@ -214,28 +189,33 @@ impl Cache {
         let index = self
             .indices
             .get(&index_id)
-            .ok_or(ReadError::IndexNotFound(index_id))?;
+            .ok_or(RuneFsError::Read(ReadError::IndexNotFound(index_id)))?;
 
         let archive = index
             .archive_refs
             .get(&archive_id)
-            .ok_or(ReadError::ArchiveNotFound(index_id, archive_id))?;
-        self.data.read_internal(archive, writer)
+            .ok_or(RuneFsError::Read(ReadError::ArchiveNotFound {
+                idx: index_id,
+                arc: archive_id,
+            }))?;
+        Ok(self.data.read_into_writer(archive, writer)?)
     }
 
-    /// Tries to return the huffman table from the cache.
+    /// Retrieves the huffman table.
     ///
-    /// This can be used to decompress chat messages, see [`Huffman`](crate::util::Huffman).
-
-    pub fn huffman_table(&self) -> crate::Result<Vec<u8>> {
+    /// Required when decompressing chat messages, see [`Huffman`](crate::util::Huffman).
+    pub fn huffman_table(&self) -> crate::Result<Buffer<Decoded>> {
         let index_id = 10;
 
         let archive = self.archive_by_name(index_id, "huffman")?;
         let buffer = self.read_archive(archive)?;
-        codec::decode(&buffer)
+
+        assert_eq!(buffer.len(), archive.length);
+
+        Ok(buffer.decode()?)
     }
 
-    pub fn archive_by_name<T: AsRef<str>>(
+    pub(crate) fn archive_by_name<T: AsRef<str>>(
         &self,
         index_id: u8,
         name: T,
@@ -243,48 +223,217 @@ impl Cache {
         let index = self
             .indices
             .get(&index_id)
-            .ok_or(ReadError::IndexNotFound(index_id))?;
+            .ok_or(RuneFsError::Read(ReadError::IndexNotFound(index_id)))?;
         let hash = util::djd2::hash(&name);
 
         let archive = index
-            .archives
+            .metadata
             .iter()
             .find(|archive| archive.name_hash == hash)
-            .ok_or_else(|| ReadError::NameNotInArchive(hash, name.as_ref().into(), index_id))?;
+            .ok_or_else(|| crate::error::NameHashMismatch {
+                hash,
+                name: name.as_ref().into(),
+                idx: index_id,
+            })?;
 
         let archive_ref = index
             .archive_refs
             .get(&archive.id)
-            .ok_or(ReadError::ArchiveNotFound(index_id, archive.id))?;
+            .ok_or(RuneFsError::Read(ReadError::ArchiveNotFound {
+                idx: index_id,
+                arc: archive.id,
+            }))?;
 
         Ok(archive_ref)
     }
 }
 
-pub trait ReadInternal {
-    fn read_internal<W: Write>(&self, archive: &ArchiveRef, writer: &mut W) -> crate::Result<()>;
+#[cfg(test)]
+mod test_util {
+    use super::Cache;
+    use sha1::Sha1;
+
+    fn is_normal<T: Send + Sync + Sized + Unpin>() {}
+
+    #[test]
+    fn normal_types() {
+        is_normal::<super::Cache>();
+    }
+
+    pub fn osrs_cache() -> crate::Result<Cache> {
+        Cache::new("./data/osrs_cache")
+    }
+
+    #[cfg(all(test, feature = "rs3"))]
+    pub fn rs3_cache() -> crate::Result<Cache> {
+        Cache::new("./data/rs3_cache")
+    }
+
+    pub fn hash(buffer: &[u8]) -> String {
+        let mut m = Sha1::new();
+
+        m.update(buffer);
+        m.digest().to_string()
+    }
 }
 
-impl ReadInternal for Mmap {
-    fn read_internal<W: Write>(&self, archive: &ArchiveRef, writer: &mut W) -> crate::Result<()> {
-        let mut current_sector = archive.sector;
-        let (header_size, chunks) = archive.chunks();
+#[cfg(test)]
+mod read {
+    mod osrs {
+        use crate::test_util;
 
-        for (chunk, data_len) in chunks.enumerate() {
-            let offset = current_sector * SECTOR_SIZE;
-
-            let data_block = &self[offset..offset + data_len];
-            match Sector::new(data_block, &header_size) {
-                Ok(sector) => {
-                    sector
-                        .header
-                        .validate(archive.id, chunk, archive.index_id)?;
-                    current_sector = sector.header.next;
-                    writer.write_all(sector.data_block)?;
-                }
-                Err(_) => return Err(ParseError::Sector(archive.sector).into()),
-            };
+        #[test]
+        fn ref_table() -> crate::Result<()> {
+            let cache = test_util::osrs_cache()?;
+            let buffer = cache.read(255, 10)?;
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "9a9a50a0bd25d6246ad5fe3ebc5b14e9a5df7227");
+            assert_eq!(buffer.len(), 77);
+            Ok(())
         }
+        #[test]
+        fn random_read() -> crate::Result<()> {
+            let cache = test_util::osrs_cache()?;
+            let buffer = cache.read(0, 191)?;
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "cd459f6ccfbd81c1e3bfadf899624f2519e207a9");
+            assert_eq!(buffer.len(), 2055);
+            Ok(())
+        }
+        #[test]
+        fn large_read() -> crate::Result<()> {
+            let cache = test_util::osrs_cache()?;
+            let buffer = cache.read(2, 10)?;
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "6d3396a9d5a7729b3b8069ac32e384e5da58096b");
+            assert_eq!(buffer.len(), 282396);
+            Ok(())
+        }
+        #[test]
+        fn deep_archive() -> crate::Result<()> {
+            let cache = test_util::osrs_cache()?;
+            let buffer = cache.read(7, 24918)?;
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "fe91e9e9170a5a05ed2684c1db1169aa7ef4906e");
+            assert_eq!(buffer.len(), 803);
+            Ok(())
+        }
+
+        #[test]
+        fn single_data_len() -> crate::Result<()> {
+            let cache = test_util::osrs_cache()?;
+            let buffer = cache.read(3, 278)?;
+
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "036abb64d3f1734d892f69b1253a87639b7bcb44");
+            assert_eq!(buffer.len(), 512);
+            Ok(())
+        }
+
+        #[test]
+        fn double_data_len() -> crate::Result<()> {
+            let cache = test_util::osrs_cache()?;
+            let buffer = cache.read(0, 1077)?;
+
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "fbe9d365cf0c3efa94e0d4a2c5e607b28a1279b9");
+            assert_eq!(buffer.len(), 1024);
+            Ok(())
+        }
+
+        #[test]
+        fn fails() -> crate::Result<()> {
+            let cache = test_util::osrs_cache()?;
+            assert!(cache.read(2, 25_000).is_err());
+            Ok(())
+        }
+    }
+
+    #[cfg(feature = "rs3")]
+    mod rs3 {
+        use crate::test_util;
+
+        #[test]
+        fn random_0_read() -> crate::Result<()> {
+            let cache = test_util::rs3_cache()?;
+            let buffer = cache.read(0, 25)?;
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "81e455fc58fe5ac98fee4df5b78600bbf43e83f7");
+            assert_eq!(buffer.len(), 1576);
+            Ok(())
+        }
+
+        #[test]
+        fn between_single_double() -> crate::Result<()> {
+            let cache = test_util::rs3_cache()?;
+            let buffer = cache.read(7, 0)?;
+
+            let hash = test_util::hash(&buffer);
+            assert_eq!(&hash, "b33919c6e4677abc6ec1c0bdd9557f820a163559");
+            assert_eq!(buffer.len(), 529);
+            Ok(())
+        }
+
+        #[test]
+        fn fails() -> crate::Result<()> {
+            let cache = test_util::rs3_cache()?;
+            assert!(cache.read(2, 25_000).is_err());
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod osrs {
+    use super::test_util;
+    use super::Cache;
+
+    #[test]
+    fn new() {
+        assert!(Cache::new("./data/osrs_cache").is_ok());
+    }
+
+    #[test]
+    fn new_wrong_path() {
+        assert!(Cache::new("./wrong/path").is_err());
+    }
+
+    #[test]
+    fn huffman_table() -> crate::Result<()> {
+        let cache = test_util::osrs_cache()?;
+        let buffer = cache.huffman_table()?;
+
+        let hash = test_util::hash(&buffer);
+        assert_eq!(&hash, "664e89cf25a0af7da138dd0f3904ca79cd1fe767");
+        assert_eq!(buffer.len(), 256);
+
+        Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "rs3"))]
+mod rs3 {
+    use super::test_util;
+    use super::Cache;
+
+    #[test]
+    fn new() {
+        assert!(Cache::new("./data/rs3_cache").is_ok());
+    }
+
+    #[test]
+    fn new_wrong_path() {
+        assert!(Cache::new("./wrong/path").is_err());
+    }
+
+    #[test]
+    fn huffman_table() -> crate::Result<()> {
+        let cache = test_util::rs3_cache()?;
+        let buffer = cache.huffman_table()?;
+
+        let hash = test_util::hash(&buffer);
+        assert_eq!(&hash, "664e89cf25a0af7da138dd0f3904ca79cd1fe767");
+        assert_eq!(buffer.len(), 256);
 
         Ok(())
     }

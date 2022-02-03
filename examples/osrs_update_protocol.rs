@@ -11,7 +11,7 @@ const DATA_LEN: usize = 512;
 
 // This example illustrates the osrs update protocol.
 // You can use this to handle client requests for cache data.
-fn main() -> osrscache::Result<()> {
+fn main() -> Result<(), osrscache::Error> {
     let cache = Cache::new("./data/cache")?;
 
     // The client would send a packet that would look something like this:
@@ -30,7 +30,8 @@ fn main() -> osrscache::Result<()> {
             archive_id,
         } => cache.read(index_id, archive_id as u32).map(|mut buffer| {
             if index_id != 255 {
-                buffer.truncate(buffer.len() - 2);
+                let len = buffer.len();
+                buffer.truncate(len - 2);
             }
             buffer
         })?,

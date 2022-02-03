@@ -7,7 +7,7 @@
 [![OSRS Version](https://img.shields.io/badge/OSRS-189-blue)](https://img.shields.io/badge/OSRS-189-blue)
 [![Discord](https://img.shields.io/discord/926860365873184768?color=5865F2)](https://discord.gg/CcTa7TZfSc)
 
-An immutable, high-level API for the Oldschool RuneScape cache file system.
+A read-only, high-level, virtual file API for the RuneScape cache.
 
 This crate is based on the [rs-cache](https://github.com/jimvdl/rs-cache/) crate by jimvdl.
 
@@ -25,13 +25,13 @@ osrs-cache = "0.1.0"
 ```rust
 use osrscache::Cache;
 
-fn main() -> osrscache::Result<()> {
-    let cache = Cache::new("./data/cache")?;
+fn main() -> Result<(), osrscache::Error> {
+    let cache = Cache::new("./data/osrs_cache")?;
 
     let index_id = 2; // Config index.
     let archive_id = 10; // Archive containing item definitions.
 
-    let buffer: Vec<u8> = cache.read(index_id, archive_id)?;
+    let buffer = cache.read(index_id, archive_id)?;
 
     Ok(())
 }

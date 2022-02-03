@@ -34,7 +34,7 @@ impl<T: Read> ReadExt for T {
     fn read_i8(&mut self) -> io::Result<i8> {
         Ok(self.read_u8()? as i8)
     }
-
+    
     fn read_u16(&mut self) -> io::Result<u16> {
         let mut buffer = [0; 2];
         self.read_exact(&mut buffer)?;
@@ -61,7 +61,6 @@ impl<T: Read> ReadExt for T {
             Ok(value - 0xC000)
         }
     }
-
     fn read_u24(&mut self) -> io::Result<u32> {
         let mut buffer = [0; 3];
         self.read_exact(&mut buffer)?;
@@ -79,7 +78,7 @@ impl<T: Read> ReadExt for T {
 
         Ok(u32::from_be_bytes(buffer))
     }
-
+    
     fn read_i32(&mut self) -> io::Result<i32> {
         Ok(self.read_u32()? as i32)
     }
@@ -109,7 +108,6 @@ impl<T: Read> ReadExt for T {
     // clean this up.
     // can't find a way to peek the first byte, even
     // an iterator reads the first byte...
-
     fn read_smart(&mut self) -> io::Result<u32> {
         let byte = self.read_u8()?;
 

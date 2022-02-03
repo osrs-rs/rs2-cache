@@ -1,6 +1,6 @@
 [package]
 name = "osrs-cache"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "A cache library for the Oldschool Runescape JS5 file system."
@@ -11,29 +11,23 @@ keywords = ["runescape", "osrs"]
 exclude = [".gitignore", "data/*"]
 categories = ["development-tools", "filesystem"]
 
-[badges]
-maintenance = { status = "experimental" }
-
-[features]
-serde-derive = ["serde", "serde-big-array"]
-
-[[example]]
-name = "osrs_update_protocol"
-
 [lib]
 name = "osrscache"
 path = "src/lib.rs"
 
 [dependencies]
 crc = "2.1"
-bzip2-rs = "0.1"
 nom = "7.0"
-itertools = "0.10"
+whirlpool = { version = "0.10", optional = true }
 num-bigint = { version = "0.4", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
-serde-big-array = { version = "0.3", optional = true }
-flate2 = "1.0"
-memmap2 = "0.5"
+thiserror = "1.0.30"
+rune-fs = "0.1"
 
 [dev-dependencies]
 sha1 = "0.6"
+rune-fs = "0.1"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

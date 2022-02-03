@@ -3,10 +3,10 @@
 #[allow(unused_assignments)]
 mod huffman;
 #[allow(clippy::many_single_char_names, clippy::too_many_lines)]
-/// Default xtea decipher.
-pub mod xtea;
+mod isaac_rand;
 
 pub use huffman::Huffman;
+pub use isaac_rand::IsaacRand;
 
 use std::{
     collections::HashMap,
@@ -19,7 +19,6 @@ macro_rules! impl_osrs_loader {
     ($ldr:ident, $def:ty, index_id: $idx_id:expr $(, archive_id: $arc_id:expr)?) => {
         impl $ldr {
             #[allow(unreachable_code)]
-
             pub fn new(cache: &Cache) -> crate::Result<Self> {
                 $(
                     let map = <$def>::fetch_from_archive(cache, $idx_id, $arc_id)?;
@@ -31,7 +30,6 @@ macro_rules! impl_osrs_loader {
 
                 Ok(Self(map))
             }
-
 
             pub fn load(&self, id: u16) -> Option<&$def> {
                 self.0.get(&id)
@@ -98,7 +96,6 @@ pub mod djd2 {
     /// let hash = osrscache::util::djd2::hash("huffman");
     /// assert_eq!(hash, 1258058669);
     /// ```
-
     pub fn hash<T: AsRef<str>>(string: T) -> i32 {
         let string = string.as_ref();
         let mut hash = 0;
@@ -119,7 +116,6 @@ pub mod djd2 {
 /// # Errors
 ///
 /// Can return `std::io::Error` if reading from the `BufReader<&[u8]>` fails.
-
 pub fn read_parameters(reader: &mut BufReader<&[u8]>) -> io::Result<HashMap<u32, String>> {
     let len = reader.read_u8()?;
     let mut map = HashMap::new();

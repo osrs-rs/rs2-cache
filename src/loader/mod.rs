@@ -11,9 +11,9 @@
 //!     Cache, extension::ReadExt,
 //!     definition::osrs::{ Definition, FetchDefinition },
 //! };
-//!
-//! fn main() -> osrscache::Result<()> {
-//!     let cache = Cache::new("./data/cache")?;
+//! 
+//! fn main() -> Result<(), osrscache::Error> {
+//!     let cache = Cache::new("./data/osrs_cache")?;
 //!     let custom_loader = CustomLoader::new(&cache)?;
 //!     let definition = custom_loader.load(1042);
 //!
@@ -26,9 +26,9 @@
 //!
 //! // Newtype defining the loader.
 //! struct CustomLoader(HashMap<u16, CustomDefinition>);
-//!
+//! 
 //! impl CustomLoader {
-//!     fn new(cache: &Cache) -> osrscache::Result<Self> {
+//!     fn new(cache: &Cache) -> Result<Self, osrscache::Error> {
 //!         // Some definitions are all contained within one archive.
 //!         // Other times one archive only contains one definition, but in most cases
 //!         // for OSRS they are stored as multiple definitions per archive.
@@ -55,14 +55,14 @@
 //! }
 //!
 //! impl Definition for CustomDefinition {
-//!     fn new(id: u16, buffer: &[u8]) -> osrscache::Result<Self> {
+//!     fn new(id: u16, buffer: &[u8]) -> Result<Self, osrscache::Error> {
 //!         let mut reader = BufReader::new(buffer);
 //!         let def = decode_buffer(id, &mut reader)?;
 //!
 //!         Ok(def)
 //!     }
 //! }
-//!
+//! 
 //! fn decode_buffer(id: u16, reader: &mut BufReader<&[u8]>) -> io::Result<CustomDefinition> {
 //!     // Parse the buffer into a definition.
 //!     let mut def = CustomDefinition {

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io, io::BufReader};
 
-#[cfg(feature = "serde-derive")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::Definition;
@@ -8,8 +8,8 @@ use crate::{extension::ReadExt, util};
 
 /// Contains all the information about a certain item fetched from the cache through
 /// the [ItemLoader](../../loader/osrs/struct.ItemLoader.html).
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct ItemDefinition {
     pub id: u16,
     pub name: String,
@@ -32,8 +32,8 @@ pub struct ItemDefinition {
     pub character_model_data: CharacterModelData,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct InventoryModelData {
     pub inventory_model: u16,
     pub zoom2d: u16,
@@ -53,8 +53,8 @@ pub struct InventoryModelData {
     pub contrast: i8,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde-derive", derive(Serialize, Deserialize))]
 pub struct CharacterModelData {
     pub male_model10: Option<u16>,
     pub male_model_offset: u8,

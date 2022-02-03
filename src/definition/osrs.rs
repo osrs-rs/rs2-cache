@@ -18,10 +18,8 @@ pub use varbit_def::*;
 
 use std::collections::HashMap;
 
-use crate::{
-    archive::{Archive, ArchiveFileGroup},
-    codec, Cache, REFERENCE_TABLE,
-};
+use crate::Cache;
+use runefs::{ArchiveFileGroup, IndexMetadata, REFERENCE_TABLE_ID};
 
 /// Marker trait for definitions.
 pub trait Definition: Sized {
@@ -43,18 +41,15 @@ pub trait FetchDefinition: Definition {
     /// # Errors
     ///
     /// Can return multiple errors: if reading, decoding or parsing definition buffers fail.
-
     fn fetch_from_index<D>(cache: &Cache, index_id: u8) -> crate::Result<HashMap<u16, D>>
     where
         D: Definition,
     {
-        let buffer = cache.read(REFERENCE_TABLE, index_id as u32)?;
-        let buffer = codec::decode(&buffer)?;
-        let archives = Archive::parse(&buffer)?;
+        let buffer = cache.read(REFERENCE_TABLE_ID, index_id as u32)?.decode()?;
+        let archives = IndexMetadata::try_from(buffer)?;
         let mut definitions = HashMap::new();
         for archive in &archives {
-            let buffer = cache.read(index_id, archive.id)?;
-            let buffer = codec::decode(&buffer)?;
+            let buffer = cache.read(index_id, archive.id)?.decode()?;
 
             definitions.insert(archive.id as u16, D::new(archive.id as u16, &buffer)?);
         }
@@ -80,8 +75,8 @@ pub trait FetchDefinition: Definition {
     ///     ItemDefinition,
     /// };
     ///
-    /// # fn main() -> osrscache::Result<()> {
-    /// # let cache = Cache::new("./data/cache")?;
+    /// # fn main() -> Result<(), osrscache::Error> {
+    /// # let cache = Cache::new("./data/osrs_cache")?;
     /// let index_id = 2; // Config index.
     /// let archive_id = 10; // Archive containing item definitions.
     ///
@@ -90,7 +85,6 @@ pub trait FetchDefinition: Definition {
     /// # Ok(())
     /// # }
     /// ```
-
     fn fetch_from_archive<D>(
         cache: &Cache,
         index_id: u8,
@@ -99,14 +93,12 @@ pub trait FetchDefinition: Definition {
     where
         D: Definition,
     {
-        let buffer = cache.read(REFERENCE_TABLE, index_id as u32)?;
-        let buffer = codec::decode(&buffer)?;
-        let archives = Archive::parse(&buffer)?;
+        let buffer = cache.read(REFERENCE_TABLE_ID, index_id as u32)?.decode()?;
+        let archives = IndexMetadata::try_from(buffer)?;
         let entry_count = archives[archive_id as usize - 1].entry_count;
-        let buffer = cache.read(index_id, archive_id)?;
-        let buffer = codec::decode(&buffer)?;
+        let buffer = cache.read(index_id, archive_id)?.decode()?;
 
-        let archive_group = ArchiveFileGroup::parse(&buffer, entry_count)?;
+        let archive_group = ArchiveFileGroup::from_buffer(&buffer, entry_count);
 
         let mut definitions = HashMap::new();
         for archive_file in archive_group {
