@@ -120,7 +120,7 @@ impl Cache {
         let index_data = self
             .indexes
             .get(archive)
-            .expect(format!("index file with id {} was not found", group).as_str());
+            .unwrap_or_else(|| panic!("index file with id {} was not found", group));
 
         // Read archive header data
         let offset = group as usize * 6;
