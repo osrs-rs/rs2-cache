@@ -7,7 +7,9 @@
 [![OSRS Version](https://img.shields.io/badge/OSRS-208-blue)](https://img.shields.io/badge/OSRS-208-blue)
 [![Discord](https://img.shields.io/discord/926860365873184768?color=5865F2)](https://discord.gg/CcTa7TZfSc)
 
-A low-level API for interfacing with the Oldschool Runescape cache. Includes a high-level API for the Rust language as well.
+A low-level API for interfacing with the Oldschool Runescape cache.
+
+The crate also includes a high-level API that is written in Rust, the usage of it is detailed in the Installation section.
 
 ## Installation
 
