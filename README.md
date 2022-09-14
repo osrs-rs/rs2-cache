@@ -9,15 +9,13 @@
 
 A read-only, high-level, virtual file API for the RuneScape cache.
 
-This crate is based on the [rs-cache](https://github.com/jimvdl/rs-cache/) crate by jimvdl.
-
 ## Installation
 
 Add this to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-osrs-cache = "0.2.2"
+osrs-cache = "0.3.0"
 ```
 
 ## Example
@@ -42,21 +40,3 @@ fn main() -> Result<(), osrscache::Error> {
 If you have suggestions for features, or want to add for example a new loader for the cache, feel free to make a pull request. For bigger features it is advised to [open an issue](https://github.com/runecore/osrs-cache/issues/new) in order to discuss it beforehand.
 
 Examples can be found in the [examples](examples/) directory which include the osrs update protocol.
-
-## Credits
-
-The following sources aided with the development of this crate:
-
-- [OpenRS](https://www.rune-server.ee/runescape-development/rs-503-client-server/downloads/312510-openrs-cache-library.html)
-- [RuneLite](https://runelite.net/)
-- [OSRS Cache Parsing Blog](https://www.osrsbox.com/blog/2018/07/26/osrs-cache-research-extract-cache-definitions/)
-- [RSMod](https://github.com/Tomm0017/rsmod)
-- [Librsfs](https://github.com/Velocity-/librsfs)
-- [OSRSBox](https://www.osrsbox.com/)
-- [Jagex-Store-5](https://github.com/guthix/Jagex-Store-5)
-
-## License
-
-`osrs-cache` is distributed under the terms of the MIT license.
-
-See [LICENSE](LICENSE) for details.

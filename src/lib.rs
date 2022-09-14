@@ -1,440 +1,290 @@
-//! A read-only, high-level, virtual file API for the RuneScape cache.
-//!
-//! This crate provides high performant data reads into the [Oldschool RuneScape] and [RuneScape 3] cache file systems.
-//! It can read the necessary data to synchronize the client's cache with the server. There are also some
-//! [loaders](#loaders) that give access to definitions from the cache such as items or npcs.
-//!
-//! For read-heavy workloads, a writer can be used to prevent continuous buffer allocations.
-//! By default every read will allocate a writer with the correct capacity.
-//!
-//! RuneScape's chat system uses huffman coding to compress messages. In order to decompress them this library has
-//! a [`Huffman`] implementation.
-//!
-//! When a RuneScape client sends game packets the id's are encoded and can be decoded with the [`IsaacRand`]
-//! implementation. These id's are encoded by the client in a predictable random order which can be reversed if
-//! the server has its own `IsaacRand` with the same encoder/decoder keys. These keys are sent by the client
-//! on login and are user specific. It will only send encoded packet id's if the packets are game packets.
-//!
-//! Note that this crate is still evolving; both OSRS & RS3 are not fully supported/implemented and
-//! will probably contain bugs or miss core features. If you require features or find bugs consider [opening
-//! an issue].
-//!
-//! # Safety
-//!
-//! In order to read bytes in a high performant way the cache uses [memmap2]. This can be unsafe because of its potential for
-//! _Undefined Behaviour_ when the underlying file is subsequently modified, in or out of process.
-//! Using `Mmap` here is safe because the RuneScape cache is a read-only binary file system. The map will remain valid even
-//! after the `File` is dropped, it's completely independent of the `File` used to create it. Therefore, the use of unsafe is
-//! not propagated outwards. When the `Cache` is dropped memory will be subsequently unmapped.
-//!
-//! # Features
-//!
-//! The cache's protocol defaults to OSRS. In order to use the RS3 protocol you can enable the `rs3` feature flag.
-//! A lot of types derive [serde]'s `Serialize` and `Deserialize`. The `serde-derive` feature flag can be used to
-//! enable (de)serialization on any compatible types.
-//!
-//! # Quick Start
-//!
-//! ```
-//! use osrscache::Cache;
-//!
-//! # fn main() -> Result<(), osrscache::Error> {
-//! let cache = Cache::new("./data/osrs_cache")?;
-//!
-//! let index_id = 2; // Config index.
-//! let archive_id = 10; // Archive containing item definitions.
-//!
-//! let buffer = cache.read(index_id, archive_id)?;
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! # Loaders
-//!
-//! In order to get [definitions](crate::definition) you can look at the [loaders](crate::loader) this library provides.
-//! The loaders use the cache as a dependency to parse in their data and cache the relevant definitions internally.
-//! The loader module also tells you how to make a loader if this crate doesn't (yet) provide it.
-//!
-//! Note: Some loaders cache these definitions lazily because of either the size of the data or the
-//! performance. The map loader for example is both slow and large so caching is by default lazy.
-//! Lazy loaders require mutability.
-//!
-//! [Oldschool RuneScape]: https://oldschool.runescape.com/
-//! [RuneScape 3]: https://www.runescape.com/
-//! [opening an issue]: https://github.com/jimvdl/rs-cache/issues/new
-//! [serde]: https://crates.io/crates/serde
-//! [memmap2]: https://crates.io/crates/memmap2
-//! [`Huffman`]: crate::util::Huffman
-//! [`IsaacRand`]: crate::util::IsaacRand
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![deny(
-    clippy::all,
-    clippy::correctness,
-    clippy::suspicious,
-    clippy::style,
-    clippy::complexity,
-    clippy::perf
-)]
+use std::{ffi::CStr, fs, os::raw::c_char, path::Path};
 
-#[macro_use]
-pub mod util;
-pub mod checksum;
-pub mod definition;
-pub mod error;
-pub mod extension;
-pub mod loader;
+use bzip2::read::BzDecoder;
+use std::io::{self, Read};
+use thiserror::Error;
 
-#[doc(inline)]
-pub use error::Error;
-use error::Result;
-
-use checksum::Checksum;
-#[cfg(feature = "rs3")]
-use checksum::{RsaChecksum, RsaKeys};
-use runefs::codec::{Buffer, Decoded, Encoded};
-use runefs::error::{Error as RuneFsError, ReadError};
-use runefs::{ArchiveRef, Dat2, Indices, MAIN_DATA};
-use std::{io::Write, path::Path};
-
-/// A complete virtual representation of the RuneScape cache file system.
-#[derive(Debug)]
-pub struct Cache {
-    data: Dat2,
-    pub(crate) indices: Indices,
+#[derive(Error, Debug)]
+pub enum CacheError {
+    #[error("data store disconnected")]
+    Disconnect(#[from] io::Error),
+    #[error("the data for key `{0}` is not available")]
+    Redaction(String),
+    #[error("invalid header (expected {expected:?}, found {found:?})")]
+    InvalidHeader { expected: String, found: String },
+    #[error("unknown data store error")]
+    Unknown,
 }
+
+pub struct Cache {
+    /// The data file
+    data: Vec<u8>,
+
+    /// Indexes
+    indexes: Vec<Vec<u8>>,
+}
+
+const MAX_INDEXES: u8 = 255;
+const META_INDEX: usize = 255;
+static CACHE_INDEX_FILE_NAME: &str = "main_file_cache.idx";
+static CACHE_DATA_FILE_NAME: &str = "main_file_cache.dat2";
 
 impl Cache {
-    /// Creates a high level virtual memory map over the cache directory.
-    /// 
-    /// All files are isolated on allocation by keeping them as in-memory files.
-    ///
-    /// # Errors
-    ///
-    /// The bulk of the errors which might occur are mostely I/O related due to acquiring 
-    /// file handles.
-    /// 
-    /// Other errors might include protocol changes in newer caches.
-    /// Any error unrelated to I/O at this stage should be considered a bug.
-    pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        Ok(Self {
-            data: Dat2::new(path.as_ref().join(MAIN_DATA))?,
-            indices: Indices::new(path)?,
-        })
+    pub fn open(input_path: &str) -> Cache {
+        // Create a Path using the input path
+        let cache_path = Path::new(input_path);
+
+        // Create vector for storing the index files
+        let mut indexes = Vec::new();
+
+        // Iterate over all indexes
+        for i in 0..=MAX_INDEXES {
+            let index_file = cache_path.join(format!("{}{}", CACHE_INDEX_FILE_NAME, i));
+
+            // Temp empty vec
+            let mut index_file_data = Vec::new();
+
+            // If read from file, set the new data
+            if let Ok(read_index_file) = fs::read(index_file.to_str().unwrap()) {
+                index_file_data = read_index_file;
+            }
+
+            // Add the index to the vec
+            indexes.push(index_file_data);
+        }
+
+        // Load the dat2 file
+        let data_file = cache_path.join(CACHE_DATA_FILE_NAME);
+        let data = fs::read(data_file.to_str().unwrap()).expect("failed getting data file");
+
+        Cache { data, indexes }
+    }
+    pub fn read(&self, archive: u16, group: u16, file: u16, xtea_keys: Option<[i32; 4]>) {
+        // Instructions on cache.read(2, 10, 1042):
+        /*
+        read the js5index in (255, 2) - though note this is cached in my cache lib so it doesn't need to re-read it every time
+        find group 10 in the the js5index
+        find file 1042 inside group 10 in the js5index
+        read group (2, 10) - note there's also a cache for this in my cache lib so it's faster if you need to read multiple files from the same group in succession
+        read file 1042 from the group and return it
+
+        // Group: https://git.openrs2.org/openrs2/openrs2/src/branch/master/cache/src/main/kotlin/org/openrs2/cache/Group.kt
+        // Js5Index: https://git.openrs2.org/openrs2/openrs2/src/branch/master/cache/src/main/kotlin/org/openrs2/cache/Js5Index.kt
+        */
+
+        // Read (255,2), get compressed data back
+        let mut archive_data = self.read_something(META_INDEX, archive);
+
+        println!("Output size of compressed data: {}", archive_data.len());
+
+        // Decompress (255,2)
+        let decompressed_data = decompress_something_bzip(archive_data);
+
+        println!(
+            "Output size of decompressed data: {}",
+            decompressed_data.len()
+        );
+
+        // Find group 10
+        let protocol = decompressed_data[0];
+
+        let smart = 0;
+        let versioned = 0;
+
+        let read_func = if protocol >= smart {
+            |v: &Vec<u8>| -> u32 { v[2] as u32 }
+        } else {
+            |v: &Vec<u8>| -> u32 { v[3] as u32 }
+        };
+
+        let version = if protocol >= versioned {
+            // read int
+            12312321
+        } else {
+            0
+        };
+        let flags = 0;
+        let size = read_func(&decompressed_data);
+
+        // Write output to file
+        fs::write("test.bin", decompressed_data).unwrap();
     }
 
-    /// Generate a checksum based on the current cache.
-    /// 
-    /// The `Checksum` acts as a validator for individual cache files.
-    /// Any RuneScape client will request a list of crc's to check the validity
-    /// of all of the file data that was transferred.
-    pub fn checksum(&self) -> crate::Result<Checksum> {
-        Checksum::new(self)
-    }
+    fn read_something(&self, archive: usize, group: u16) -> Vec<u8> {
+        // Get the archive (index file)
+        let index_data = self
+            .indexes
+            .get(archive)
+            .expect(format!("index file with id {} was not found", group).as_str());
 
-    /// Generate a checksum based on the current cache with RSA encryption.
-    /// 
-    /// `RsaChecksum` wraps a regular `Checksum` with the added benefit of encrypting
-    /// the whirlpool hash into the checksum buffer.
-    #[cfg(feature = "rs3")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rs3")))]
-    pub fn checksum_with<'a>(&self, keys: RsaKeys<'a>) -> crate::Result<RsaChecksum<'a>> {
-        RsaChecksum::with_keys(self, keys)
-    }
+        // Read archive header data
+        let offset = group as usize * 6;
+        let archive_len = u32::from_be_bytes([
+            0,
+            index_data[offset],
+            index_data[offset + 1],
+            index_data[offset + 2],
+        ]);
+        let archive_sector = u32::from_be_bytes([
+            0,
+            index_data[offset + 3],
+            index_data[offset + 4],
+            index_data[offset + 5],
+        ]);
 
-    /// Retrieves and constructs data corresponding to the given index and archive.
-    ///
-    /// # Errors
-    ///
-    /// When trying to retrieve data from an index or an archive that does not exist 
-    /// the `IndexNotFound` or `ArchiveNotFound` errors are returned, respectively.
-    /// 
-    /// Any other errors such as sector validation failures or failed parsers should
-    /// be considered a bug.
-    pub fn read(&self, index_id: u8, archive_id: u32) -> crate::Result<Buffer<Encoded>> {
-        let index = self
-            .indices
-            .get(&index_id)
-            .ok_or(RuneFsError::Read(ReadError::IndexNotFound(index_id)))?;
+        let mut offset = archive_sector * 520;
+        let mut sector = archive_sector;
+        let mut read_bytes_count = 0;
+        let mut part = 0;
+        let mut archive_data = Vec::new();
+        let mut temp_archive_buffer = [0u8; 520];
+        while read_bytes_count < archive_len {
+            // Sector should not be 0
+            if sector == 0 {
+                panic!("Sector 0");
+            }
 
-        let archive = index
-            .archive_refs
-            .get(&archive_id)
-            .ok_or(RuneFsError::Read(ReadError::ArchiveNotFound {
-                idx: index_id,
-                arc: archive_id,
-            }))?;
+            // Handle block size
+            let mut data_block_size = archive_len - read_bytes_count;
+            if data_block_size > 512 {
+                data_block_size = 512;
+            }
 
-        let buffer = self.data.read(archive)?;
+            // Calc new len
+            let header_size = 8;
+            let length = data_block_size + header_size;
 
-        assert_eq!(buffer.len(), archive.length);
+            // Copy over new data
+            for i in 0..length {
+                //println!("{} {}", i + offset, self.data[(i + offset) as usize]);
+                temp_archive_buffer[i as usize] = self.data[(i + offset) as usize];
+            }
 
-        Ok(buffer)
-    }
+            // Parse header values
+            let group_id = u16::from_be_bytes([temp_archive_buffer[0], temp_archive_buffer[1]]);
+            let part_id = u16::from_be_bytes([temp_archive_buffer[2], temp_archive_buffer[3]]);
+            let next_sector = u32::from_be_bytes([
+                0,
+                temp_archive_buffer[4],
+                temp_archive_buffer[5],
+                temp_archive_buffer[6],
+            ]);
 
-    pub(crate) fn read_archive(&self, archive: &ArchiveRef) -> crate::Result<Buffer<Encoded>> {
-        self.read(archive.index_id, archive.id)
-    }
+            // TODO: Verify here if everything is ok using the grabbed header
 
-    /// Retrieves and writes data corresponding to the given index and archive into `W`.
-    ///
-    /// # Errors
-    ///
-    /// See the error section on [`read`](Cache::read) for more details.
-    pub fn read_into_writer<W: Write>(
-        &self,
-        index_id: u8,
-        archive_id: u32,
-        writer: &mut W,
-    ) -> crate::Result<()> {
-        let index = self
-            .indices
-            .get(&index_id)
-            .ok_or(RuneFsError::Read(ReadError::IndexNotFound(index_id)))?;
+            for i in header_size..length {
+                archive_data.push(temp_archive_buffer[i as usize]);
+                read_bytes_count += 1;
+            }
 
-        let archive = index
-            .archive_refs
-            .get(&archive_id)
-            .ok_or(RuneFsError::Read(ReadError::ArchiveNotFound {
-                idx: index_id,
-                arc: archive_id,
-            }))?;
-        Ok(self.data.read_into_writer(archive, writer)?)
-    }
+            // Get next sector
+            sector = next_sector;
+            part += 1;
 
-    /// Retrieves the huffman table.
-    ///
-    /// Required when decompressing chat messages, see [`Huffman`](crate::util::Huffman).
-    pub fn huffman_table(&self) -> crate::Result<Buffer<Decoded>> {
-        let index_id = 10;
-
-        let archive = self.archive_by_name(index_id, "huffman")?;
-        let buffer = self.read_archive(archive)?;
-
-        assert_eq!(buffer.len(), archive.length);
-
-        Ok(buffer.decode()?)
-    }
-
-    pub(crate) fn archive_by_name<T: AsRef<str>>(
-        &self,
-        index_id: u8,
-        name: T,
-    ) -> crate::Result<&ArchiveRef> {
-        let index = self
-            .indices
-            .get(&index_id)
-            .ok_or(RuneFsError::Read(ReadError::IndexNotFound(index_id)))?;
-        let hash = util::djd2::hash(&name);
-
-        let archive = index
-            .metadata
-            .iter()
-            .find(|archive| archive.name_hash == hash)
-            .ok_or_else(|| crate::error::NameHashMismatch {
-                hash,
-                name: name.as_ref().into(),
-                idx: index_id,
-            })?;
-
-        let archive_ref = index
-            .archive_refs
-            .get(&archive.id)
-            .ok_or(RuneFsError::Read(ReadError::ArchiveNotFound {
-                idx: index_id,
-                arc: archive.id,
-            }))?;
-
-        Ok(archive_ref)
+            offset = sector * 520;
+        }
+        archive_data
     }
 }
 
-#[cfg(test)]
-mod test_util {
-    use super::Cache;
-    use sha1::Sha1;
-
-    fn is_normal<T: Send + Sync + Sized + Unpin>() {}
-
-    #[test]
-    fn normal_types() {
-        is_normal::<super::Cache>();
+fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
+    // Get the type of compression used
+    let compression_type = archive_data[0];
+    // Get compressed size
+    let compressed_size = u32::from_be_bytes([
+        archive_data[1],
+        archive_data[2],
+        archive_data[3],
+        archive_data[4],
+    ]);
+    println!("Compressed size check: {}", compressed_size);
+    // Get decompressed size
+    let mut decompressed_size = 0;
+    if compression_type != 0 {
+        decompressed_size = u32::from_be_bytes([
+            archive_data[5],
+            archive_data[6],
+            archive_data[7],
+            archive_data[8],
+        ]);
     }
+    println!("Decompressed size check: {}", decompressed_size);
 
-    pub fn osrs_cache() -> crate::Result<Cache> {
-        Cache::new("./data/osrs_cache")
-    }
-
-    #[cfg(all(test, feature = "rs3"))]
-    pub fn rs3_cache() -> crate::Result<Cache> {
-        Cache::new("./data/rs3_cache")
-    }
-
-    pub fn hash(buffer: &[u8]) -> String {
-        let mut m = Sha1::new();
-
-        m.update(buffer);
-        m.digest().to_string()
-    }
+    // Remove the version (2 bytes) TODO: Check if size needs removal, don't just plainly remove it
+    archive_data.pop();
+    archive_data.pop();
+    // Decompress using bzip2 (only impl for now)
+    // Copy over the compressed data, skipping 4 bytes for bzip header
+    let mut compressed_data = archive_data[5..archive_data.len() - 4].to_vec();
+    // Copy over the bzip header
+    compressed_data[..4].copy_from_slice(b"BZh1");
+    let mut decompressor = BzDecoder::new(compressed_data.as_slice());
+    let mut decompressed_data = vec![0; decompressed_size as usize];
+    decompressor.read_exact(&mut decompressed_data).unwrap();
+    decompressed_data
 }
 
-#[cfg(test)]
-mod read {
-    mod osrs {
-        use crate::test_util;
+#[no_mangle]
+pub unsafe extern "C" fn cache_create(cache_ptr: *mut Cache, archive: u32) {}
+#[no_mangle]
+pub unsafe extern "C" fn cache_capacity(cache_ptr: *mut Cache, archive: u32) {}
 
-        #[test]
-        fn ref_table() -> crate::Result<()> {
-            let cache = test_util::osrs_cache()?;
-            let buffer = cache.read(255, 10)?;
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "9a9a50a0bd25d6246ad5fe3ebc5b14e9a5df7227");
-            assert_eq!(buffer.len(), 77);
-            Ok(())
-        }
-        #[test]
-        fn random_read() -> crate::Result<()> {
-            let cache = test_util::osrs_cache()?;
-            let buffer = cache.read(0, 191)?;
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "cd459f6ccfbd81c1e3bfadf899624f2519e207a9");
-            assert_eq!(buffer.len(), 2055);
-            Ok(())
-        }
-        #[test]
-        fn large_read() -> crate::Result<()> {
-            let cache = test_util::osrs_cache()?;
-            let buffer = cache.read(2, 10)?;
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "6d3396a9d5a7729b3b8069ac32e384e5da58096b");
-            assert_eq!(buffer.len(), 282396);
-            Ok(())
-        }
-        #[test]
-        fn deep_archive() -> crate::Result<()> {
-            let cache = test_util::osrs_cache()?;
-            let buffer = cache.read(7, 24918)?;
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "fe91e9e9170a5a05ed2684c1db1169aa7ef4906e");
-            assert_eq!(buffer.len(), 803);
-            Ok(())
-        }
+#[no_mangle]
+pub unsafe extern "C" fn cache_open(path: *const c_char) -> *mut Cache {
+    // Get CStr
+    let path_cstr = CStr::from_ptr(path);
 
-        #[test]
-        fn single_data_len() -> crate::Result<()> {
-            let cache = test_util::osrs_cache()?;
-            let buffer = cache.read(3, 278)?;
+    // Convert to Rust str
+    let path_str = path_cstr.to_str().unwrap();
 
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "036abb64d3f1734d892f69b1253a87639b7bcb44");
-            assert_eq!(buffer.len(), 512);
-            Ok(())
-        }
+    // Open the cache
+    let cache = Cache::open(path_str);
 
-        #[test]
-        fn double_data_len() -> crate::Result<()> {
-            let cache = test_util::osrs_cache()?;
-            let buffer = cache.read(0, 1077)?;
-
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "fbe9d365cf0c3efa94e0d4a2c5e607b28a1279b9");
-            assert_eq!(buffer.len(), 1024);
-            Ok(())
-        }
-
-        #[test]
-        fn fails() -> crate::Result<()> {
-            let cache = test_util::osrs_cache()?;
-            assert!(cache.read(2, 25_000).is_err());
-            Ok(())
-        }
-    }
-
-    #[cfg(feature = "rs3")]
-    mod rs3 {
-        use crate::test_util;
-
-        #[test]
-        fn random_0_read() -> crate::Result<()> {
-            let cache = test_util::rs3_cache()?;
-            let buffer = cache.read(0, 25)?;
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "81e455fc58fe5ac98fee4df5b78600bbf43e83f7");
-            assert_eq!(buffer.len(), 1576);
-            Ok(())
-        }
-
-        #[test]
-        fn between_single_double() -> crate::Result<()> {
-            let cache = test_util::rs3_cache()?;
-            let buffer = cache.read(7, 0)?;
-
-            let hash = test_util::hash(&buffer);
-            assert_eq!(&hash, "b33919c6e4677abc6ec1c0bdd9557f820a163559");
-            assert_eq!(buffer.len(), 529);
-            Ok(())
-        }
-
-        #[test]
-        fn fails() -> crate::Result<()> {
-            let cache = test_util::rs3_cache()?;
-            assert!(cache.read(2, 25_000).is_err());
-            Ok(())
-        }
-    }
+    // Return the cache as a Box
+    Box::into_raw(Box::new(cache))
 }
 
-#[cfg(test)]
-mod osrs {
-    use super::test_util;
-    use super::Cache;
+#[no_mangle]
+pub unsafe extern "C" fn cache_read(
+    // Pointer to the cache
+    cache_ptr: *mut Cache,
+    // Archive id
+    archive: u16,
+    group: u16,
+    file: u16,
+    xtea_keys_arg: *const [i32; 4],
+    // Output length
+    len: *mut u32,
+) -> *mut u8 {
+    // Dereference the cache
+    let cache = &*cache_ptr;
 
-    #[test]
-    fn new() {
-        assert!(Cache::new("./data/osrs_cache").is_ok());
+    // Dereference the xtea keys if not null
+    let mut xtea_keys = None;
+    if !xtea_keys_arg.is_null() {
+        xtea_keys = Some(*xtea_keys_arg);
     }
 
-    #[test]
-    fn new_wrong_path() {
-        assert!(Cache::new("./wrong/path").is_err());
-    }
+    // Call the read function
+    cache.read(archive, group, file, xtea_keys);
 
-    #[test]
-    fn huffman_table() -> crate::Result<()> {
-        let cache = test_util::osrs_cache()?;
-        let buffer = cache.huffman_table()?;
-
-        let hash = test_util::hash(&buffer);
-        assert_eq!(&hash, "664e89cf25a0af7da138dd0f3904ca79cd1fe767");
-        assert_eq!(buffer.len(), 256);
-
-        Ok(())
-    }
+    // TODO: Return proper output
+    let mut buf = vec![0; 512].into_boxed_slice();
+    let data = buf.as_mut_ptr();
+    *len = buf.len() as u32;
+    std::mem::forget(buf);
+    data
 }
 
-#[cfg(all(test, feature = "rs3"))]
-mod rs3 {
-    use super::test_util;
-    use super::Cache;
+#[no_mangle]
+pub unsafe extern "C" fn cache_write(cache_ptr: *mut Cache, archive: u32) {}
+#[no_mangle]
+pub unsafe extern "C" fn cache_remove(cache_ptr: *mut Cache, archive: u32) {}
 
-    #[test]
-    fn new() {
-        assert!(Cache::new("./data/rs3_cache").is_ok());
-    }
-
-    #[test]
-    fn new_wrong_path() {
-        assert!(Cache::new("./wrong/path").is_err());
-    }
-
-    #[test]
-    fn huffman_table() -> crate::Result<()> {
-        let cache = test_util::rs3_cache()?;
-        let buffer = cache.huffman_table()?;
-
-        let hash = test_util::hash(&buffer);
-        assert_eq!(&hash, "664e89cf25a0af7da138dd0f3904ca79cd1fe767");
-        assert_eq!(buffer.len(), 256);
-
-        Ok(())
+#[no_mangle]
+pub unsafe extern "C" fn cache_close(cache_ptr: *mut Cache) {
+    // If the pointer to the cache is not null, drop the box
+    if !cache_ptr.is_null() {
+        drop(Box::from_raw(cache_ptr))
     }
 }
