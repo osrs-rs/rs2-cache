@@ -28,10 +28,11 @@ use osrscache::Cache;
 fn main() -> Result<(), osrscache::Error> {
     let cache = Cache::new("./data/osrs_cache")?;
 
-    let index_id = 2; // Config index.
-    let archive_id = 10; // Archive containing item definitions.
+    let index_id = 2; // Config index
+    let archive_id = 10; // Item definitions archive
+    let file_id = 1042; // Blue Partyhat file
 
-    let buffer = cache.read(index_id, archive_id)?;
+    let buffer = cache.read(index_id, archive_id, file_id)?;
 
     Ok(())
 }
