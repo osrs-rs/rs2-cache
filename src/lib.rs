@@ -1,7 +1,12 @@
-use std::{ffi::CStr, fs, os::raw::c_char, path::Path};
-
 use bzip2::read::BzDecoder;
-use std::io::{self, Read};
+use std::{
+    ffi::CStr,
+    fs,
+    io::{self, Read},
+    mem,
+    os::raw::c_char,
+    path::Path,
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -272,7 +277,7 @@ pub unsafe extern "C" fn cache_read(
     let mut buf = vec![0; 512].into_boxed_slice();
     let data = buf.as_mut_ptr();
     *len = buf.len() as u32;
-    std::mem::forget(buf);
+    mem::forget(buf);
     data
 }
 
