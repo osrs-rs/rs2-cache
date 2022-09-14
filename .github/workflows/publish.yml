@@ -1,0 +1,62 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - '*'
+
+# Reference: https://github.com/deadlinks/cargo-deadlinks/blob/a259a191dd2ab57df1bf519b273064e1d7755cf9/.github/workflows/deploy.yml
+jobs:
+  publish:
+    name: Publish binaries for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        name: [linux, windows, macos]
+
+        include:
+          - name: linux
+            os: ubuntu-latest
+            dynamic_suffix: .so
+            static_suffix: .a
+            asset_suffix: -linux
+            lib_prefix: lib
+          - name: windows
+            os: windows-latest
+            dynamic_suffix: .dll
+            static_suffix: .lib
+            asset_suffix: -windows
+            lib_prefix: ""
+          - name: macos
+            os: macos-latest
+            dynamic_suffix: .dylib
+            static_suffix: .a
+            asset_suffix: -macos
+            lib_prefix: lib
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+
+    - name: Build
+      run: cargo build --release
+
+    - name: Upload dynamic binaries to release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: target/release/${{ matrix.lib_prefix }}osrscache${{ matrix.dynamic_suffix }}
+        asset_name: osrscache${{ matrix.asset_suffix }}${{ matrix.dynamic_suffix }}
+        tag: ${{ github.ref }}
+
+    - name: Upload static binaries to release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: target/release/${{ matrix.lib_prefix }}osrscache${{ matrix.static_suffix }}
+        asset_name: osrscache${{ matrix.asset_suffix }}${{ matrix.static_suffix }}
+        tag: ${{ github.ref }}

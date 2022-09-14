@@ -4,7 +4,7 @@
 [![API](https://docs.rs/osrs-cache/badge.svg)](https://docs.rs/osrs-cache)
 [![Crate](https://img.shields.io/crates/v/osrs-cache)](https://crates.io/crates/osrs-cache)
 [![dependency status](https://deps.rs/repo/github/runecore/osrs-cache/status.svg)](https://deps.rs/repo/github/runecore/osrs-cache)
-[![OSRS Version](https://img.shields.io/badge/OSRS-189-blue)](https://img.shields.io/badge/OSRS-189-blue)
+[![OSRS Version](https://img.shields.io/badge/OSRS-208-blue)](https://img.shields.io/badge/OSRS-208-blue)
 [![Discord](https://img.shields.io/discord/926860365873184768?color=5865F2)](https://discord.gg/CcTa7TZfSc)
 
 A read-only, high-level, virtual file API for the RuneScape cache.
