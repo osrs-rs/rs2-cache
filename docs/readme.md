@@ -26,7 +26,7 @@ osrs-cache = "0.3.0"
 use osrscache::Cache;
 
 fn main() -> Result<(), osrscache::Error> {
-    let cache = Cache::new("./data/osrs_cache")?;
+    let cache = Cache::open("./data/osrs_cache")?;
 
     let index_id = 2; // Config index
     let archive_id = 10; // Item definitions archive
