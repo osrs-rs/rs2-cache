@@ -9,7 +9,7 @@
 
 A low-level API for interfacing with the Oldschool Runescape cache.
 
-The crate also includes a high-level API that is written in Rust, the usage of it is detailed in the Installation section.
+This crate also includes a high-level API that is written in Rust, the usage of it is detailed in the Installation section.
 
 ## Installation
 
