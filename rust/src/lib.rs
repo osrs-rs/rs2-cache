@@ -1,7 +1,9 @@
 use bzip2::read::BzDecoder;
+use memmap2::Mmap;
 use std::{
+    collections::HashMap,
     ffi::CStr,
-    fs,
+    fs::{self, File},
     io::{self, Read},
     mem,
     os::raw::c_char,
@@ -23,13 +25,13 @@ pub enum CacheError {
 
 pub struct Cache {
     /// The data file
-    data: Vec<u8>,
+    data: Mmap,
 
     /// Indexes
-    indexes: Vec<Vec<u8>>,
+    indexes: HashMap<usize, Mmap>,
 }
 
-const MAX_INDEXES: u8 = 255;
+const MAX_INDEXES: usize = 255;
 const META_INDEX: usize = 255;
 static CACHE_INDEX_FILE_NAME: &str = "main_file_cache.idx";
 static CACHE_DATA_FILE_NAME: &str = "main_file_cache.dat2";
@@ -39,30 +41,31 @@ impl Cache {
         // Create a Path using the input path
         let cache_path = Path::new(input_path);
 
-        // Create vector for storing the index files
-        let mut indexes = Vec::new();
+        // Create HashMap for storing the index files
+        let mut indexes = HashMap::new();
 
         // Iterate over all indexes
         for i in 0..=MAX_INDEXES {
             let index_file = cache_path.join(format!("{}{}", CACHE_INDEX_FILE_NAME, i));
 
-            // Temp empty vec
-            let mut index_file_data = Vec::new();
-
             // If read from file, set the new data
-            if let Ok(read_index_file) = fs::read(index_file.to_str().unwrap()) {
-                index_file_data = read_index_file;
-            }
+            if let Ok(index_file) = File::open(index_file.to_str().unwrap()) {
+                let index_file_mmap = unsafe { Mmap::map(&index_file).unwrap() };
 
-            // Add the index to the vec
-            indexes.push(index_file_data);
+                indexes.insert(i, index_file_mmap);
+            }
         }
 
         // Load the dat2 file
-        let data_file = cache_path.join(CACHE_DATA_FILE_NAME);
-        let data = fs::read(data_file.to_str().unwrap()).expect("failed getting data file");
+        let data_file_path = cache_path.join(CACHE_DATA_FILE_NAME);
+        let data_file =
+            File::open(data_file_path.to_str().unwrap()).expect("failed getting data file");
+        let data_file_mmap = unsafe { Mmap::map(&data_file).unwrap() };
 
-        Cache { data, indexes }
+        Cache {
+            data: data_file_mmap,
+            indexes,
+        }
     }
     pub fn read(&self, archive: u16, group: u16, file: u16, xtea_keys: Option<[i32; 4]>) {
         // Instructions on cache.read(2, 10, 1042):
@@ -119,7 +122,7 @@ impl Cache {
         // Get the archive (index file)
         let index_data = self
             .indexes
-            .get(archive)
+            .get(&archive)
             .unwrap_or_else(|| panic!("index file with id {} was not found", group));
 
         // Read archive header data
