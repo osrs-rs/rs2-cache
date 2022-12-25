@@ -1,6 +1,5 @@
-use std::{ffi::CString, ptr, slice};
-
-use osrscache::cache_read;
+pub use osrscache::cache_read;
+use std::{ptr, slice};
 
 mod common;
 
@@ -17,7 +16,6 @@ fn test_cache_read() {
     let cache_ptr = common::setup();
 
     // Test reading blue partyhat
-
     // Create output length
     let mut out_len = 0;
     let out_len_ptr: *mut u32 = &mut out_len;

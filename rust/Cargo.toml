@@ -19,3 +19,5 @@ crate-type = ["lib", "cdylib", "staticlib"]
 thiserror = "1.0.34"
 bzip2 = "0.4"
 memmap2 = "0.5"
+tracing = "0.1"
+tracing-subscriber = "0.3"

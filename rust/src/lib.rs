@@ -10,6 +10,7 @@ use std::{
     path::Path,
 };
 use thiserror::Error;
+use tracing::trace;
 
 #[derive(Error, Debug)]
 pub enum CacheError {
@@ -83,12 +84,12 @@ impl Cache {
         // Read (255,2), get compressed data back
         let mut archive_data = self.read_something(META_INDEX, archive);
 
-        println!("Output size of compressed data: {}", archive_data.len());
+        trace!("Output size of compressed data: {}", archive_data.len());
 
         // Decompress (255,2)
         let decompressed_data = decompress_something_bzip(archive_data);
 
-        println!(
+        trace!(
             "Output size of decompressed data: {}",
             decompressed_data.len()
         );
@@ -205,7 +206,7 @@ fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
         archive_data[3],
         archive_data[4],
     ]);
-    println!("Compressed size check: {}", compressed_size);
+    trace!("Compressed size check: {}", compressed_size);
     // Get decompressed size
     let mut decompressed_size = 0;
     if compression_type != 0 {
@@ -216,7 +217,7 @@ fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
             archive_data[8],
         ]);
     }
-    println!("Decompressed size check: {}", decompressed_size);
+    trace!("Decompressed size check: {}", decompressed_size);
 
     // Remove the version (2 bytes) TODO: Check if size needs removal, don't just plainly remove it
     archive_data.pop();
@@ -262,8 +263,10 @@ pub unsafe extern "C" fn cache_read(
     file: u16,
     xtea_keys_arg: *const [i32; 4],
     // Output length
-    len: *mut u32,
+    out_len: *mut u32,
 ) -> *mut u8 {
+    trace!("cache_read(cache_ptr = {:?}, archive = {}, group = {}, file = {}, xtea_keys = {:?}, out_len = {:?})", cache_ptr, archive, group, file, xtea_keys_arg, out_len);
+
     // Dereference the cache
     let cache = &*cache_ptr;
 
@@ -279,7 +282,7 @@ pub unsafe extern "C" fn cache_read(
     // TODO: Return proper output
     let mut buf = vec![0; 512].into_boxed_slice();
     let data = buf.as_mut_ptr();
-    *len = buf.len() as u32;
+    *out_len = buf.len() as u32;
     mem::forget(buf);
     data
 }
