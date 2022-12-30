@@ -35,6 +35,7 @@ class Cache:
         #    print(byte)
 
 
+print("Python example")
 cache = Cache.open("./cache")
 # Read a blue partyhat from the cache
 cache.read(2, 10, 1042)
