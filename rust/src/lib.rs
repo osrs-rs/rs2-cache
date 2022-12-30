@@ -1,10 +1,11 @@
 use bzip2::read::BzDecoder;
 use memmap2::Mmap;
+use osrs_buffer::ReadExt;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     ffi::CStr,
     fs::{self, File},
-    io::{self, Read},
+    io::{self, Cursor, Read},
     mem,
     os::raw::c_char,
     path::Path,
@@ -30,6 +31,47 @@ pub struct Cache {
 
     /// Indexes
     indexes: HashMap<usize, Mmap>,
+}
+
+enum Js5Protocol {
+    Original = 5,
+    Versioned = 6,
+    Smart = 7,
+}
+
+enum Js5IndexFlags {
+    Flag_Names = 0x1,
+    Flag_Digests = 0x2,
+    Flag_Lengths = 0x4,
+    Flag_UncompressedChecksums = 0x8,
+}
+
+#[derive(Debug)]
+struct Js5IndexFile {
+    name_hash: i32,
+}
+
+#[derive(Debug)]
+struct Js5IndexEntry {
+    name_hash: i32,
+    version: u32,
+    checksum: u32,
+    uncompressed_checksum: u32,
+    length: u32,
+    uncompressed_length: u32,
+    digest: Option<bool>,
+    capacity: u32,
+    entries: HashMap<u32, Js5IndexFile>,
+}
+
+struct Js5Index {
+    protocol: u8,
+    version: i32,
+    has_names: bool,
+    has_digests: bool,
+    has_lengths: bool,
+    has_uncompressed_checksums: bool,
+    entries: BTreeMap<u32, Js5IndexEntry>,
 }
 
 const MAX_INDEXES: usize = 255;
@@ -63,16 +105,22 @@ impl Cache {
             File::open(data_file_path.to_str().unwrap()).expect("failed getting data file");
         let data_file_mmap = unsafe { Mmap::map(&data_file).unwrap() };
 
-        Cache {
+        Self {
             data: data_file_mmap,
             indexes,
         }
     }
-    pub fn read(&self, archive: u16, group: u16, file: u16, xtea_keys: Option<[i32; 4]>) {
+    pub fn read(
+        &self,
+        archive: u16,
+        group: u16,
+        file: u16,
+        xtea_keys: Option<[i32; 4]>,
+    ) -> Vec<u8> {
         // Instructions on cache.read(2, 10, 1042):
         /*
         read the js5index in (255, 2) - though note this is cached in my cache lib so it doesn't need to re-read it every time
-        find group 10 in the the js5index
+        find group 10 in the the js5index (SHOULD BE AT THIS STEP)
         find file 1042 inside group 10 in the js5index
         read group (2, 10) - note there's also a cache for this in my cache lib so it's faster if you need to read multiple files from the same group in succession
         read file 1042 from the group and return it
@@ -82,7 +130,7 @@ impl Cache {
         */
 
         // Read (255,2), get compressed data back
-        let mut archive_data = self.read_something(META_INDEX, archive);
+        let archive_data = self.read_something(META_INDEX, archive);
 
         trace!("Output size of compressed data: {}", archive_data.len());
 
@@ -94,29 +142,184 @@ impl Cache {
             decompressed_data.len()
         );
 
+        let mut csr = Cursor::new(&decompressed_data);
+
         // Find group 10
-        let protocol = decompressed_data[0];
+        let protocol = csr.read_u8().unwrap();
 
-        let smart = 0;
-        let versioned = 0;
-
-        let read_func = if protocol >= smart {
-            |v: &Vec<u8>| -> u32 { v[2] as u32 }
+        let read_func = if protocol >= Js5Protocol::Smart as u8 {
+            // TODO: Read Smart
+            |v: &mut Cursor<&Vec<u8>>| -> u32 { todo!() }
         } else {
-            |v: &Vec<u8>| -> u32 { v[3] as u32 }
+            |v: &mut Cursor<&Vec<u8>>| -> u32 { v.read_u16().unwrap() as u32 }
         };
 
-        let version = if protocol >= versioned {
-            // read int
-            12312321
+        let version = if protocol >= Js5Protocol::Versioned as u8 {
+            csr.read_i32().unwrap()
         } else {
             0
         };
-        let flags = 0;
-        let size = read_func(&decompressed_data);
 
-        // Write output to file
-        fs::write("test.bin", decompressed_data).unwrap();
+        let flags = csr.read_u8().unwrap();
+        let size = read_func(&mut csr);
+
+        // Trace flags and size
+        trace!("Flags: {}", flags);
+        trace!("Size: {}", size);
+
+        // Create Js5Index
+        let mut index = Js5Index {
+            protocol,
+            version,
+            has_names: (flags & Js5IndexFlags::Flag_Names as u8) != 0,
+            has_digests: (flags & Js5IndexFlags::Flag_Digests as u8) != 0,
+            has_lengths: (flags & Js5IndexFlags::Flag_Lengths as u8) != 0,
+            has_uncompressed_checksums: (flags & Js5IndexFlags::Flag_UncompressedChecksums as u8)
+                != 0,
+            entries: BTreeMap::new(),
+        };
+
+        // Begin creating the groups
+        let mut prev_group_id = 0;
+        (0..size).for_each(|_| {
+            prev_group_id += read_func(&mut csr);
+            index.entries.insert(
+                prev_group_id,
+                Js5IndexEntry {
+                    name_hash: -1,
+                    version: 0,
+                    checksum: 0,
+                    uncompressed_checksum: 0,
+                    length: 0,
+                    uncompressed_length: 0,
+                    digest: None,
+                    capacity: 0,
+                    entries: HashMap::new(),
+                },
+            );
+        });
+
+        if index.has_names {
+            for (id, group) in &mut index.entries {
+                group.name_hash = csr.read_i32().unwrap();
+            }
+        }
+
+        for (id, group) in &mut index.entries {
+            group.checksum = csr.read_u32().unwrap();
+        }
+
+        if index.has_uncompressed_checksums {
+            for (id, group) in &mut index.entries {
+                group.uncompressed_checksum = csr.read_u32().unwrap();
+            }
+        }
+
+        // TODO: Digests
+        if index.has_digests {
+            //for group in &mut index.entries {
+            //}
+        }
+
+        if index.has_lengths {
+            for (id, group) in &mut index.entries {
+                group.length = csr.read_u32().unwrap();
+                group.uncompressed_length = csr.read_u32().unwrap();
+            }
+        }
+
+        for (id, group) in &mut index.entries {
+            group.version = csr.read_u32().unwrap();
+        }
+
+        let group_sizes: Vec<u32> = (0..size).map(|_| read_func(&mut csr)).collect();
+
+        for (i, (id, group)) in index.entries.iter_mut().enumerate() {
+            let group_size = group_sizes[i];
+
+            let mut prev_file_id = 0;
+            (0..group_size).for_each(|_| {
+                prev_file_id += read_func(&mut csr);
+                group
+                    .entries
+                    .insert(prev_file_id, Js5IndexFile { name_hash: -1 });
+            });
+        }
+
+        if index.has_names {
+            for (id, group) in &mut index.entries {
+                for (file_id, file) in &mut group.entries {
+                    file.name_hash = csr.read_i32().unwrap();
+                }
+            }
+        }
+
+        // Print data of the "items" group in the cache aka group 10
+        trace!(
+            "Len of files: {}",
+            index.entries.get(&10).unwrap().entries.len()
+        );
+
+        // EVERYTHING ABOVE FROM HERE SHOULD BE DONE ON CACHE OPENING, NOT IN READING
+
+        // TODO: EVERYTHING BELOW SHOULD BE CACHED UPON FIRST READ
+
+        // Grab 2,10. Decompress it, and begin going over the stripes
+        let archive_data2 = self.read_something(archive as usize, group);
+        trace!("Output size of compressed data: {}", archive_data2.len());
+
+        // Decompress it
+        let archive_data2_decompressed = decompress_something_bzip(archive_data2);
+
+        trace!(
+            "Some data here: {} {} {}",
+            archive_data2_decompressed[0],
+            archive_data2_decompressed[1],
+            archive_data2_decompressed[2]
+        );
+
+        // Now begin going over the stripes
+        let stripes = *archive_data2_decompressed.last().unwrap();
+        trace!("Stripes: {}", stripes);
+
+        let data_index = 0;
+        let trailer_index = archive_data2_decompressed.len()
+            - (stripes as usize * index.entries.get(&10).unwrap().entries.len() * 4) as usize
+            - 1;
+
+        trace!("Trailer index: {}", trailer_index);
+
+        let mut readerrr = Cursor::new(&archive_data2_decompressed[trailer_index..]);
+
+        let mut lens = vec![0; index.entries.get(&10).unwrap().entries.len()];
+
+        for i in 0..stripes {
+            let mut prev_len = 0;
+            for j in &mut lens {
+                prev_len += readerrr.read_i32().unwrap();
+                *j += prev_len;
+            }
+        }
+
+        let mut file_reader_stuff = Cursor::new(&archive_data2_decompressed);
+
+        let mut files_final: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
+
+        for (x, y) in &index.entries.get(&10).unwrap().entries {
+            files_final.insert(*x, vec![0; lens[*x as usize] as usize]);
+        }
+
+        for i in 0..stripes {
+            let mut prev_len = 0;
+            for j in 0..index.entries.get(&10).unwrap().entries.len() {
+                prev_len += lens[j];
+                file_reader_stuff
+                    .read_exact(&mut files_final.get_mut(&(j as u32)).unwrap())
+                    .unwrap();
+            }
+        }
+
+        files_final.get(&(file as u32)).unwrap().to_vec()
     }
 
     fn read_something(&self, archive: usize, group: u16) -> Vec<u8> {
@@ -197,8 +400,12 @@ impl Cache {
 }
 
 fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
+    trace!("Archive data len: {}", archive_data.len());
+
     // Get the type of compression used
     let compression_type = archive_data[0];
+    trace!("Compression type: {}", compression_type);
+
     // Get compressed size
     let compressed_size = u32::from_be_bytes([
         archive_data[1],
@@ -206,7 +413,8 @@ fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
         archive_data[3],
         archive_data[4],
     ]);
-    trace!("Compressed size check: {}", compressed_size);
+    trace!("Compressed size: {}", compressed_size,);
+
     // Get decompressed size
     let mut decompressed_size = 0;
     if compression_type != 0 {
@@ -217,7 +425,7 @@ fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
             archive_data[8],
         ]);
     }
-    trace!("Decompressed size check: {}", decompressed_size);
+    trace!("Decompressed size: {}", decompressed_size);
 
     // Remove the version (2 bytes) TODO: Check if size needs removal, don't just plainly remove it
     archive_data.pop();
@@ -277,10 +485,8 @@ pub unsafe extern "C" fn cache_read(
     }
 
     // Call the read function
-    cache.read(archive, group, file, xtea_keys);
+    let mut buf = cache.read(archive, group, file, xtea_keys);
 
-    // TODO: Return proper output
-    let mut buf = vec![0; 512].into_boxed_slice();
     let data = buf.as_mut_ptr();
     *out_len = buf.len() as u32;
     mem::forget(buf);

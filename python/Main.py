@@ -12,7 +12,7 @@ class Cache:
     @staticmethod
     def open(path):
         # Load the osrscache library into C types
-        lib = cdll.LoadLibrary('../rust/target/debug/osrscache.dll')
+        lib = cdll.LoadLibrary('./osrscache.dll')
 
         # Open the Cache using C types
         lib.cache_open.restype = c_void_p
@@ -24,11 +24,15 @@ class Cache:
     # Read a file from the cache
     def read(self, archive, group, file):
         output_len = c_uint32(0)
+        self.lib.cache_read.restype = c_void_p
         self.lib.cache_read.argtypes = [
             c_void_p, c_int, c_int, c_int, c_int, POINTER(c_uint32)]
-        self.lib.cache_read(self.cache_c, archive, group,
-                            file, 0, byref(output_len))
-        print(output_len)
+        res = self.lib.cache_read(self.cache_c, archive, group,
+                                  file, 0, byref(output_len))
+        b = bytearray(string_at(res, output_len.value))
+        print(b)
+        # for byte in b:
+        #    print(byte)
 
 
 cache = Cache.open("./cache")
