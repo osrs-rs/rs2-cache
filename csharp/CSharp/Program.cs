@@ -26,7 +26,7 @@ class Cache
     private static extern IntPtr cache_open(string lpText);
 
     [DllImport("osrscache.dll")]
-    private static extern IntPtr cache_read(IntPtr cache, ushort archive, ushort group, ushort file, UIntPtr xtea_keys, ref uint out_len);
+    private static extern IntPtr cache_read(IntPtr cache, ushort archive, ushort group, ushort file, UIntPtr xtea_keys, ref int out_len);
 
     // The internal cache object
     IntPtr cache;
@@ -53,12 +53,12 @@ class Cache
         }
 
         // Call cache_read
-        uint out_len = 0;
+        var out_len = 0;
         var buf = cache_read(cache, archive, group, file, xtea_keys, ref out_len);
 
         // Copy the data from the IntPtr to the byte array
         byte[] managedArray = new byte[out_len];
-        Marshal.Copy(buf, managedArray, 0, (int)out_len);
+        Marshal.Copy(buf, managedArray, 0, out_len);
 
         return managedArray;
     }
