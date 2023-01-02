@@ -40,10 +40,10 @@ enum Js5Protocol {
 }
 
 enum Js5IndexFlags {
-    Flag_Names = 0x1,
-    Flag_Digests = 0x2,
-    Flag_Lengths = 0x4,
-    Flag_UncompressedChecksums = 0x8,
+    FlagNames = 0x1,
+    FlagDigests = 0x2,
+    FlagLengths = 0x4,
+    FlagUncompressedChecksums = 0x8,
 }
 
 #[derive(Debug)]
@@ -80,22 +80,22 @@ static CACHE_INDEX_FILE_NAME: &str = "main_file_cache.idx";
 static CACHE_DATA_FILE_NAME: &str = "main_file_cache.dat2";
 
 impl Cache {
-    pub fn open(input_path: &str) -> Cache {
+    pub fn open(input_path: &str) -> io::Result<Cache> {
         // Create a Path using the input path
         let cache_path = Path::new(input_path);
 
         // Create HashMap for storing the index files
         let mut indexes = HashMap::new();
 
-        // Iterate over all indexes
+        // Iterate over all indexes from 0 to including MAX_INDEXES (255)
         for i in 0..=MAX_INDEXES {
             let index_file = cache_path.join(format!("{}{}", CACHE_INDEX_FILE_NAME, i));
 
-            // If read from file, set the new data
+            // If read from file, insert into HashMap
             if let Ok(index_file) = File::open(index_file.to_str().unwrap()) {
-                let index_file_mmap = unsafe { Mmap::map(&index_file).unwrap() };
-
-                indexes.insert(i, index_file_mmap);
+                if let Ok(index_file_mmap) = unsafe { Mmap::map(&index_file) } {
+                    indexes.insert(i, index_file_mmap);
+                }
             }
         }
 
@@ -103,13 +103,23 @@ impl Cache {
         let data_file_path = cache_path.join(CACHE_DATA_FILE_NAME);
         let data_file =
             File::open(data_file_path.to_str().unwrap()).expect("failed getting data file");
-        let data_file_mmap = unsafe { Mmap::map(&data_file).unwrap() };
+        let data_file_mmap = unsafe { Mmap::map(&data_file)? };
 
-        Self {
+        // Return the Cache struct
+        Ok(Self {
             data: data_file_mmap,
             indexes,
-        }
+        })
     }
+
+    /// Read a file from the cache
+    ///
+    /// # Arguments
+    ///
+    /// * `archive` - The archive to read from
+    /// * `group` - The group to read from
+    /// * `file` - The file to read
+    /// * `xtea_keys` - The XTEA keys to use for decryption. If None, the file will not be decrypted
     pub fn read(
         &self,
         archive: u16,
@@ -129,20 +139,12 @@ impl Cache {
         // Js5Index: https://git.openrs2.org/openrs2/openrs2/src/branch/master/cache/src/main/kotlin/org/openrs2/cache/Js5Index.kt
         */
 
-        // Read (255,2), get compressed data back
-        let archive_data = self.read_something(META_INDEX, archive);
+        // Read (255,2)
+        let archive_data = self.read_archive_group_data(META_INDEX, archive);
 
-        trace!("Output size of compressed data: {}", archive_data.len());
+        trace!("Output len of (255,2) data: {}", archive_data.len());
 
-        // Decompress (255,2)
-        let decompressed_data = decompress_something_bzip(archive_data);
-
-        trace!(
-            "Output size of decompressed data: {}",
-            decompressed_data.len()
-        );
-
-        let mut csr = Cursor::new(&decompressed_data);
+        let mut csr = Cursor::new(&archive_data);
 
         // Find group 10
         let protocol = csr.read_u8().unwrap();
@@ -171,10 +173,10 @@ impl Cache {
         let mut index = Js5Index {
             protocol,
             version,
-            has_names: (flags & Js5IndexFlags::Flag_Names as u8) != 0,
-            has_digests: (flags & Js5IndexFlags::Flag_Digests as u8) != 0,
-            has_lengths: (flags & Js5IndexFlags::Flag_Lengths as u8) != 0,
-            has_uncompressed_checksums: (flags & Js5IndexFlags::Flag_UncompressedChecksums as u8)
+            has_names: (flags & Js5IndexFlags::FlagNames as u8) != 0,
+            has_digests: (flags & Js5IndexFlags::FlagDigests as u8) != 0,
+            has_lengths: (flags & Js5IndexFlags::FlagLengths as u8) != 0,
+            has_uncompressed_checksums: (flags & Js5IndexFlags::FlagUncompressedChecksums as u8)
                 != 0,
             entries: BTreeMap::new(),
         };
@@ -264,32 +266,29 @@ impl Cache {
 
         // TODO: EVERYTHING BELOW SHOULD BE CACHED UPON FIRST READ
 
-        // Grab 2,10. Decompress it, and begin going over the stripes
-        let archive_data2 = self.read_something(archive as usize, group);
+        // Read (2, 10)
+        let archive_data2 = self.read_archive_group_data(archive as usize, group);
         trace!("Output size of compressed data: {}", archive_data2.len());
-
-        // Decompress it
-        let archive_data2_decompressed = decompress_something_bzip(archive_data2);
 
         trace!(
             "Some data here: {} {} {}",
-            archive_data2_decompressed[0],
-            archive_data2_decompressed[1],
-            archive_data2_decompressed[2]
+            archive_data2[0],
+            archive_data2[1],
+            archive_data2[2]
         );
 
         // Now begin going over the stripes
-        let stripes = *archive_data2_decompressed.last().unwrap();
+        let stripes = *archive_data2.last().unwrap();
         trace!("Stripes: {}", stripes);
 
         let data_index = 0;
-        let trailer_index = archive_data2_decompressed.len()
+        let trailer_index = archive_data2.len()
             - (stripes as usize * index.entries.get(&10).unwrap().entries.len() * 4) as usize
             - 1;
 
         trace!("Trailer index: {}", trailer_index);
 
-        let mut readerrr = Cursor::new(&archive_data2_decompressed[trailer_index..]);
+        let mut readerrr = Cursor::new(&archive_data2[trailer_index..]);
 
         let mut lens = vec![0; index.entries.get(&10).unwrap().entries.len()];
 
@@ -301,7 +300,7 @@ impl Cache {
             }
         }
 
-        let mut file_reader_stuff = Cursor::new(&archive_data2_decompressed);
+        let mut file_reader_stuff = Cursor::new(&archive_data2);
 
         let mut files_final: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
 
@@ -322,13 +321,19 @@ impl Cache {
         files_final.get(&(file as u32)).unwrap().to_vec()
     }
 
-    fn read_something(&self, archive: usize, group: u16) -> Vec<u8> {
+    fn read_archive_group_data(&self, archive: usize, group: u16) -> Vec<u8> {
+        let x = self.fun_name(archive, group);
+        let y = decompress_archive(x);
+
+        y
+    }
+
+    fn fun_name(&self, archive: usize, group: u16) -> Vec<u8> {
         // Get the archive (index file)
         let index_data = self
             .indexes
             .get(&archive)
             .unwrap_or_else(|| panic!("index file with id {} was not found", group));
-
         // Read archive header data
         let offset = group as usize * 6;
         let archive_len = u32::from_be_bytes([
@@ -343,7 +348,6 @@ impl Cache {
             index_data[offset + 4],
             index_data[offset + 5],
         ]);
-
         let mut offset = archive_sector * 520;
         let mut sector = archive_sector;
         let mut read_bytes_count = 0;
@@ -372,7 +376,7 @@ impl Cache {
                 temp_archive_buffer[i as usize] = self.data[(i + offset) as usize];
             }
 
-            // Parse header values
+            // Parse header values from the temp buffer
             let group_id = u16::from_be_bytes([temp_archive_buffer[0], temp_archive_buffer[1]]);
             let part_id = u16::from_be_bytes([temp_archive_buffer[2], temp_archive_buffer[3]]);
             let next_sector = u32::from_be_bytes([
@@ -382,24 +386,42 @@ impl Cache {
                 temp_archive_buffer[6],
             ]);
 
-            // TODO: Verify here if everything is ok using the grabbed header
+            // Test the header values against the expected values
+            assert_eq!(group, group_id);
+            assert_eq!(part, part_id);
+            assert_ne!(sector, next_sector);
 
-            for i in header_size..length {
-                archive_data.push(temp_archive_buffer[i as usize]);
-                read_bytes_count += 1;
-            }
+            // Add new data to archive data
+            archive_data.extend(temp_archive_buffer[header_size as usize..length as usize].iter());
+            read_bytes_count += length - header_size;
 
             // Get next sector
             sector = next_sector;
+
+            // Increment part
             part += 1;
 
+            // Update offset
             offset = sector * 520;
         }
         archive_data
     }
 }
 
-fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
+const COMPRESSION_TYPE_NONE: u8 = 0;
+const COMPRESSION_TYPE_BZIP: u8 = 1;
+const COMPRESSION_TYPE_GZIP: u8 = 2;
+
+/*enum CompressionType {
+    None = 0,
+    Bzip = 1,
+    Gzip = 2,
+}*/
+
+// Decompresses an archive file using the compression type specified in the header
+fn decompress_archive(mut archive_data: Vec<u8>) -> Vec<u8> {
+    let mut header_length = 1;
+
     trace!("Archive data len: {}", archive_data.len());
 
     // Get the type of compression used
@@ -407,36 +429,59 @@ fn decompress_something_bzip(mut archive_data: Vec<u8>) -> Vec<u8> {
     trace!("Compression type: {}", compression_type);
 
     // Get compressed size
-    let compressed_size = u32::from_be_bytes([
+    let archive_size = u32::from_be_bytes([
         archive_data[1],
         archive_data[2],
         archive_data[3],
         archive_data[4],
     ]);
-    trace!("Compressed size: {}", compressed_size,);
+    trace!("Archive size: {}", archive_size);
 
-    // Get decompressed size
-    let mut decompressed_size = 0;
-    if compression_type != 0 {
-        decompressed_size = u32::from_be_bytes([
-            archive_data[5],
-            archive_data[6],
-            archive_data[7],
-            archive_data[8],
-        ]);
+    if compression_type == COMPRESSION_TYPE_NONE {
+        header_length += 4;
+    } else {
+        header_length += 8;
     }
+
+    // Remove the two version bytes if they exist
+    if archive_data.len() == (archive_size + header_length + 2) as usize {
+        archive_data.pop();
+        archive_data.pop();
+    };
+
+    // If the compression type is none, return the data at this point
+    if compression_type == COMPRESSION_TYPE_NONE {
+        todo!("None compression not handled yet, check with OpenRS2 first")
+        //return archive_data;
+    }
+
+    // Get the decompressed size
+    let decompressed_size = u32::from_be_bytes([
+        archive_data[5],
+        archive_data[6],
+        archive_data[7],
+        archive_data[8],
+    ]);
     trace!("Decompressed size: {}", decompressed_size);
 
-    // Remove the version (2 bytes) TODO: Check if size needs removal, don't just plainly remove it
-    archive_data.pop();
-    archive_data.pop();
-    // Decompress using bzip2 (only impl for now)
-    // Copy over the compressed data, skipping 4 bytes for bzip header
+    // Decompress the data based on the compression type
+    let decompressed_data = match compression_type {
+        COMPRESSION_TYPE_BZIP => decompress_archive_bzip2(archive_data, decompressed_size),
+        COMPRESSION_TYPE_GZIP => todo!("GZIP compression not implemented yet"),
+        _ => panic!("Unknown compression type: {}", compression_type),
+    };
+
+    decompressed_data
+}
+
+// Decompress using bzip2
+fn decompress_archive_bzip2(archive_data: Vec<u8>, decompressed_size: u32) -> Vec<u8> {
+    let mut decompressed_data = vec![0; decompressed_size as usize];
+
     let mut compressed_data = archive_data[5..archive_data.len() - 4].to_vec();
-    // Copy over the bzip header
     compressed_data[..4].copy_from_slice(b"BZh1");
     let mut decompressor = BzDecoder::new(compressed_data.as_slice());
-    let mut decompressed_data = vec![0; decompressed_size as usize];
+
     decompressor.read_exact(&mut decompressed_data).unwrap();
     decompressed_data
 }
@@ -455,7 +500,7 @@ pub unsafe extern "C" fn cache_open(path: *const c_char) -> *mut Cache {
     let path_str = path_cstr.to_str().unwrap();
 
     // Open the cache
-    let cache = Cache::open(path_str);
+    let cache = Cache::open(path_str).expect("failed to open cache");
 
     // Return the cache as a Box
     Box::into_raw(Box::new(cache))
