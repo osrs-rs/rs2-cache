@@ -15,7 +15,7 @@ namespace OsrsCache
         /// <returns></returns>
         public static IServiceCollection AddOsrsCacheService(this IServiceCollection serviceProvider, string cachePath)
         {
-            serviceProvider.AddSingleton(new OsrsCacheService(cachePath));
+            serviceProvider.AddScoped((provider) => new OsrsCacheService(cachePath));
             return serviceProvider;
         }
 
