@@ -8,17 +8,19 @@ namespace OsrsCache
     {
         // The internal cache object
         private IntPtr _cache;
+        private readonly IInternals _internals;
 
-        public OsrsCacheService(string path)
+        public OsrsCacheService(IInternals internals, string path)
         {
-            _cache = Internals.cache_open(path);
+            _cache = internals.CacheOpen(path);
+            _internals = internals;
         }
 
         public byte[] Read(ushort archive, ushort group, ushort file, int[] xtea_keys_param = null)
         {
             // Call cache_read
             var out_len = 0;
-            var buf = Internals.cache_read(_cache, archive, group, file, xtea_keys: UIntPtr.Zero, ref out_len);
+            var buf = _internals.CacheRead(_cache, archive, group, file, xtea_keys: UIntPtr.Zero, ref out_len);
 
             // Copy the data from the IntPtr to the byte array
             byte[] managedArray = new byte[out_len];
@@ -30,7 +32,7 @@ namespace OsrsCache
         {
             // Call cache_read
             var out_len = 0;
-            var buf = Internals.cache_read(_cache, archive, group, file, xtea_keys: UIntPtr.Zero, ref out_len);
+            var buf = _internals.CacheRead(_cache, archive, group, file, xtea_keys: UIntPtr.Zero, ref out_len);
             return new UnmanagedMemoryStream((byte*)buf.ToPointer(), out_len);
         }
 

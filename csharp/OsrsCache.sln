@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.3.32922.545
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsrsCache", "OsrsCache/OsrsCache.csproj", "{12D25655-A708-4B3C-84BA-5EF1936D755D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OsrsCache", "OsrsCache\OsrsCache.csproj", "{12D25655-A708-4B3C-84BA-5EF1936D755D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsrsCache.Test", "OsrsCache.Test\OsrsCache.Test.csproj", "{8F30D4E3-E969-4917-95D6-0C678EACA02B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{12D25655-A708-4B3C-84BA-5EF1936D755D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{12D25655-A708-4B3C-84BA-5EF1936D755D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{12D25655-A708-4B3C-84BA-5EF1936D755D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F30D4E3-E969-4917-95D6-0C678EACA02B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F30D4E3-E969-4917-95D6-0C678EACA02B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F30D4E3-E969-4917-95D6-0C678EACA02B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F30D4E3-E969-4917-95D6-0C678EACA02B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
