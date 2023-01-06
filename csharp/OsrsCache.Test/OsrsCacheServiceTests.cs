@@ -56,6 +56,7 @@ namespace OsrsCache.Test
         public void Dispose()
         {
             Marshal.FreeHGlobal(_fakeUnmangedData);
+            _service.Dispose();
         }
     }
 }
