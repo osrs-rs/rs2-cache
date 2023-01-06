@@ -27,7 +27,6 @@
 		</None>
 	</ItemGroup>
 
-	<!-- build tasks for Catalyst.Cryptography.FFI.Rust -->
 	<!-- @TODO at moment this only assumes debug target for rust build, we should pass $(configuration) rust build command-->
 	<Target Name="CompileNativeRuntimes" BeforeTargets="BeforeBuild">
 		<!-- build for osx -->
