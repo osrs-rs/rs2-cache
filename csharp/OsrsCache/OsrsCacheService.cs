@@ -3,20 +3,14 @@ using System.Runtime.InteropServices;
 
 namespace OsrsCache
 {
-    public class OsrsCacheService
+    public class OsrsCacheService : IDisposable
     {
-        [DllImport("osrscache.dll")]
-        private static extern IntPtr cache_open(string lpText);
-
-        [DllImport("osrscache.dll")]
-        private static extern IntPtr cache_read(IntPtr cache, ushort archive, ushort group, ushort file, UIntPtr xtea_keys, ref int out_len);
-
         // The internal cache object
-        public readonly IntPtr _cache;
+        private IntPtr _cache;
 
         public OsrsCacheService(string path)
         {
-            _cache = cache_open(path);
+            _cache = Internals.cache_open(path);
         }
 
         public byte[] Read(ushort archive, ushort group, ushort file, int[] xtea_keys_param = null)
@@ -31,13 +25,18 @@ namespace OsrsCache
 
             // Call cache_read
             var out_len = 0;
-            var buf = cache_read(_cache, archive, group, file, xtea_keys, ref out_len);
+            var buf = Internals.cache_read(_cache, archive, group, file, xtea_keys, ref out_len);
 
             // Copy the data from the IntPtr to the byte array
             byte[] managedArray = new byte[out_len];
             Marshal.Copy(buf, managedArray, 0, out_len);
 
             return managedArray;
+        }
+
+        public void Dispose()
+        {
+            _cache = IntPtr.Zero;
         }
     }
 }
