@@ -1,13 +1,7 @@
 ﻿using FluentAssertions;
-using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NSubstitute.ReceivedExtensions;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace OsrsCache.Test
@@ -15,9 +9,9 @@ namespace OsrsCache.Test
     public class OsrsCacheServiceTests : IDisposable
     {
         private static readonly byte[] _fakeManagedData = new byte[] { 1, 2, 3, 4, 5 };
-        private IInternals _fakeInternals;
-        private OsrsCacheService _service;
-        private IntPtr _fakeUnmangedData;
+        private readonly IInternals _fakeInternals;
+        private readonly OsrsCacheService _service;
+        private readonly IntPtr _fakeUnmangedData;
 
         public OsrsCacheServiceTests()
         {
