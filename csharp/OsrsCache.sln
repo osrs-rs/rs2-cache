@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.3.32922.545
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsrsCache", "OsrsCache/OsrsCache.csproj", "{12D25655-A708-4B3C-84BA-5EF1936D755D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{12D25655-A708-4B3C-84BA-5EF1936D755D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12D25655-A708-4B3C-84BA-5EF1936D755D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12D25655-A708-4B3C-84BA-5EF1936D755D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12D25655-A708-4B3C-84BA-5EF1936D755D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {A262FF06-C9DA-4742-9A91-92A52C62E592}
+	EndGlobalSection
+EndGlobal

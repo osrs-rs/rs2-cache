@@ -13,6 +13,7 @@ categories = ["development-tools", "filesystem"]
 
 [lib]
 name = "osrscache"
+path = "src/lib.rs"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]

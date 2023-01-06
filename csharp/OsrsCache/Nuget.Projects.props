@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <RepositoryUrl>https://github.com/osrs-rs/osrs-cache</RepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+
+    <PackageTags>OsrsCache</PackageTags>
+    <PackageDescription>Osrs Cache Reading</PackageDescription>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <SignAssembly>true</SignAssembly>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../LICENSE.txt" Pack="true" PackagePath="LICENSE.txt"/>
+  </ItemGroup>
+</Project>
