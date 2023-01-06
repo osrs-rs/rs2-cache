@@ -44,7 +44,7 @@ namespace OsrsCache.Test
         [Fact]
         public async Task Can_create_unmanaged_stream()
         {
-            var stream = _service.ReadStream(1, 1, 1);
+            using var stream = _service.ReadStream(1, 1, 1);
             var outRef = 0;
             _fakeInternals.Received(1).CacheRead(IntPtr.Zero, 1, 1, 1, UIntPtr.Zero, ref outRef);
             var bArray = new byte[_fakeManagedData.Length];
