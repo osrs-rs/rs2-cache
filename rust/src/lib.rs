@@ -1,7 +1,8 @@
 use bzip2::read::BzDecoder;
 use memmap2::Mmap;
-use osrs_buffer::ReadExt;
+use osrs_bytes::ReadExt;
 use std::{
+    cmp,
     collections::{BTreeMap, HashMap},
     ffi::CStr,
     fs::{self, File},
@@ -25,12 +26,28 @@ pub enum CacheError {
     Unknown,
 }
 
-pub struct Cache {
-    /// The data file
+struct DiskStore {
     data: Mmap,
 
-    /// Indexes
     indexes: HashMap<usize, Mmap>,
+}
+
+struct Archive {
+    dirty: bool,
+}
+
+impl Archive {
+    pub fn read(&self, group: u16, file: u16, data: &Mmap) -> Vec<u8> {
+        Vec::new()
+    }
+}
+
+pub struct Cache {
+    /// Store
+    store: DiskStore,
+
+    /// Archives
+    archives: HashMap<u16, Archive>,
 }
 
 enum Js5Protocol {
@@ -61,7 +78,7 @@ struct Js5IndexEntry {
     uncompressed_length: u32,
     digest: Option<bool>,
     capacity: u32,
-    entries: HashMap<u32, Js5IndexFile>,
+    files: HashMap<u32, Js5IndexFile>,
 }
 
 struct Js5Index {
@@ -71,7 +88,7 @@ struct Js5Index {
     has_digests: bool,
     has_lengths: bool,
     has_uncompressed_checksums: bool,
-    entries: BTreeMap<u32, Js5IndexEntry>,
+    groups: BTreeMap<u32, Js5IndexEntry>,
 }
 
 const MAX_INDEXES: usize = 255;
@@ -107,8 +124,11 @@ impl Cache {
 
         // Return the Cache struct
         Ok(Self {
-            data: data_file_mmap,
-            indexes,
+            store: DiskStore {
+                data: data_file_mmap,
+                indexes,
+            },
+            archives: HashMap::new(),
         })
     }
 
@@ -178,14 +198,14 @@ impl Cache {
             has_lengths: (flags & Js5IndexFlags::FlagLengths as u8) != 0,
             has_uncompressed_checksums: (flags & Js5IndexFlags::FlagUncompressedChecksums as u8)
                 != 0,
-            entries: BTreeMap::new(),
+            groups: BTreeMap::new(),
         };
 
         // Begin creating the groups
         let mut prev_group_id = 0;
         (0..size).for_each(|_| {
             prev_group_id += read_func(&mut csr);
-            index.entries.insert(
+            index.groups.insert(
                 prev_group_id,
                 Js5IndexEntry {
                     name_hash: -1,
@@ -196,23 +216,23 @@ impl Cache {
                     uncompressed_length: 0,
                     digest: None,
                     capacity: 0,
-                    entries: HashMap::new(),
+                    files: HashMap::new(),
                 },
             );
         });
 
         if index.has_names {
-            for (id, group) in &mut index.entries {
+            for (id, group) in &mut index.groups {
                 group.name_hash = csr.read_i32().unwrap();
             }
         }
 
-        for (id, group) in &mut index.entries {
+        for (id, group) in &mut index.groups {
             group.checksum = csr.read_u32().unwrap();
         }
 
         if index.has_uncompressed_checksums {
-            for (id, group) in &mut index.entries {
+            for (id, group) in &mut index.groups {
                 group.uncompressed_checksum = csr.read_u32().unwrap();
             }
         }
@@ -224,33 +244,33 @@ impl Cache {
         }
 
         if index.has_lengths {
-            for (id, group) in &mut index.entries {
+            for (id, group) in &mut index.groups {
                 group.length = csr.read_u32().unwrap();
                 group.uncompressed_length = csr.read_u32().unwrap();
             }
         }
 
-        for (id, group) in &mut index.entries {
+        for (id, group) in &mut index.groups {
             group.version = csr.read_u32().unwrap();
         }
 
         let group_sizes: Vec<u32> = (0..size).map(|_| read_func(&mut csr)).collect();
 
-        for (i, (id, group)) in index.entries.iter_mut().enumerate() {
+        for (i, (id, group)) in index.groups.iter_mut().enumerate() {
             let group_size = group_sizes[i];
 
             let mut prev_file_id = 0;
             (0..group_size).for_each(|_| {
                 prev_file_id += read_func(&mut csr);
                 group
-                    .entries
+                    .files
                     .insert(prev_file_id, Js5IndexFile { name_hash: -1 });
             });
         }
 
         if index.has_names {
-            for (id, group) in &mut index.entries {
-                for (file_id, file) in &mut group.entries {
+            for (id, group) in &mut index.groups {
+                for (file_id, file) in &mut group.files {
                     file.name_hash = csr.read_i32().unwrap();
                 }
             }
@@ -259,7 +279,7 @@ impl Cache {
         // Print data of the "items" group in the cache aka group 10
         trace!(
             "Len of files: {}",
-            index.entries.get(&10).unwrap().entries.len()
+            index.groups.get(&10).unwrap().files.len()
         );
 
         // EVERYTHING ABOVE FROM HERE SHOULD BE DONE ON CACHE OPENING, NOT IN READING
@@ -283,14 +303,14 @@ impl Cache {
 
         let data_index = 0;
         let trailer_index = archive_data2.len()
-            - (stripes as usize * index.entries.get(&10).unwrap().entries.len() * 4) as usize
+            - (stripes as usize * index.groups.get(&10).unwrap().files.len() * 4) as usize
             - 1;
 
         trace!("Trailer index: {}", trailer_index);
 
         let mut readerrr = Cursor::new(&archive_data2[trailer_index..]);
 
-        let mut lens = vec![0; index.entries.get(&10).unwrap().entries.len()];
+        let mut lens = vec![0; index.groups.get(&10).unwrap().files.len()];
 
         for i in 0..stripes {
             let mut prev_len = 0;
@@ -304,13 +324,13 @@ impl Cache {
 
         let mut files_final: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
 
-        for (x, y) in &index.entries.get(&10).unwrap().entries {
+        for (x, y) in &index.groups.get(&10).unwrap().files {
             files_final.insert(*x, vec![0; lens[*x as usize] as usize]);
         }
 
         for i in 0..stripes {
             let mut prev_len = 0;
-            for j in 0..index.entries.get(&10).unwrap().entries.len() {
+            for j in 0..index.groups.get(&10).unwrap().files.len() {
                 prev_len += lens[j];
                 file_reader_stuff
                     .read_exact(&mut files_final.get_mut(&(j as u32)).unwrap())
@@ -331,6 +351,7 @@ impl Cache {
     fn fun_name(&self, archive: usize, group: u16) -> Vec<u8> {
         // Get the archive (index file)
         let index_data = self
+            .store
             .indexes
             .get(&archive)
             .unwrap_or_else(|| panic!("index file with id {} was not found", group));
@@ -360,20 +381,17 @@ impl Cache {
                 panic!("Sector 0");
             }
 
-            // Handle block size
-            let mut data_block_size = archive_len - read_bytes_count;
-            if data_block_size > 512 {
-                data_block_size = 512;
-            }
+            // Get the block size
+            let data_block_size = cmp::min(archive_len - read_bytes_count, 512);
 
-            // Calc new len
+            // Calulate the length of the data block
             let header_size = 8;
             let length = data_block_size + header_size;
 
-            // Copy over new data
+            // Copy over new data to the temp buffer
             for i in 0..length {
                 //println!("{} {}", i + offset, self.data[(i + offset) as usize]);
-                temp_archive_buffer[i as usize] = self.data[(i + offset) as usize];
+                temp_archive_buffer[i as usize] = self.store.data[(i + offset) as usize];
             }
 
             // Parse header values from the temp buffer
@@ -391,7 +409,7 @@ impl Cache {
             assert_eq!(part, part_id);
             assert_ne!(sector, next_sector);
 
-            // Add new data to archive data
+            // Add new data to archive data and update the read bytes count
             archive_data.extend(temp_archive_buffer[header_size as usize..length as usize].iter());
             read_bytes_count += length - header_size;
 
@@ -536,6 +554,14 @@ pub unsafe extern "C" fn cache_read(
     *out_len = buf.len() as u32;
     mem::forget(buf);
     data
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn free_cache_read_buffer(buffer: *mut u8) {
+    // If the buffer is not null, drop the Vec
+    if !buffer.is_null() {
+        drop(Vec::from_raw_parts(buffer, 0, 0))
+    }
 }
 
 #[no_mangle]
