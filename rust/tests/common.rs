@@ -1,4 +1,4 @@
-use osrscache::Cache;
+use rs2cache::Cache;
 use std::ffi::CString;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -15,5 +15,5 @@ pub fn setup() -> *mut Cache {
     tracing::subscriber::set_global_default(subscriber).ok();
 
     let cache = CString::new("./data/cache").unwrap();
-    unsafe { osrscache::cache_open(cache.as_ptr()) }
+    unsafe { rs2cache::cache_open(cache.as_ptr()) }
 }

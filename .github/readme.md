@@ -1,9 +1,9 @@
-# osrs-cache
+# rs2-cache
 
-[![Build](https://github.com/osrs-rs/osrs-cache/workflows/build/badge.svg)](https://github.com/osrs-rs/osrs-cache)
-[![API](https://docs.rs/osrs-cache/badge.svg)](https://docs.rs/osrs-cache)
-[![Crate](https://img.shields.io/crates/v/osrs-cache)](https://crates.io/crates/osrs-cache)
-[![dependency status](https://deps.rs/repo/github/osrs-rs/osrs-cache/status.svg)](https://deps.rs/repo/github/osrs-rs/osrs-cache)
+[![Build](https://github.com/osrs-rs/rs2-cache/workflows/build/badge.svg)](https://github.com/osrs-rs/rs2-cache)
+[![API](https://docs.rs/rs2-cache/badge.svg)](https://docs.rs/rs2-cache)
+[![Crate](https://img.shields.io/crates/v/rs2-cache)](https://crates.io/crates/rs2-cache)
+[![dependency status](https://deps.rs/repo/github/osrs-rs/rs2-cache/status.svg)](https://deps.rs/repo/github/osrs-rs/rs2-cache)
 [![OSRS Version](https://img.shields.io/badge/OSRS-208-blue)](https://img.shields.io/badge/OSRS-208-blue)
 [![Discord](https://img.shields.io/discord/926860365873184768?color=5865F2)](https://discord.gg/CcTa7TZfSc)
 
@@ -17,13 +17,13 @@ Add this to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-osrs-cache = "0.3.0"
+rs2-cache = "0.1.0"
 ```
 
 ## Example
 
 ```rust
-use osrscache::Cache;
+use rs2cache::Cache;
 
 fn main() -> Result<(), osrscache::Error> {
     let cache = Cache::open("./data/osrs_cache")?;
@@ -40,6 +40,6 @@ fn main() -> Result<(), osrscache::Error> {
 
 ## Contributing
 
-If you have suggestions for features, or want to add for example a new loader for the cache, feel free to make a pull request. For bigger features it is advised to [open an issue](https://github.com/osrs-rs/osrs-cache/issues/new) in order to discuss it beforehand.
+If you have suggestions for features, or want to add for example a new loader for the cache, feel free to make a pull request. For bigger features it is advised to [open an issue](https://github.com/osrs-rs/rs2-cache/issues/new) in order to discuss it beforehand.
 
 Examples can be found in the [examples](examples/) directory which include the osrs update protocol.
