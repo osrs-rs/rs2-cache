@@ -432,17 +432,19 @@ impl Archive for CacheArchive {
         self.is_dirty
     }
 
-    fn read(&self, group: u16, file: u16, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
+    fn read(&self, group: u16, file: u16, key: Option<[u32; 4]>) -> Vec<u8> {
         if group < 0 || file < 0 {
             panic!("group {} or file {} is out of bounds", group, file);
         }
 
         let entry = self.index.groups.get(&(group as u32)).unwrap();
+        let unpacked = self.get_unpacked(entry, key);
 
         Vec::new()
     }
 
     fn get_unpacked(&self, entry: &Js5IndexEntry, key: Option<[u32; 4]>) -> Unpacked {
+        trace!("get unpacked");
         // TODO: Handle unpacked cache
 
         let compressed = self.read_packed(123);
@@ -765,7 +767,67 @@ impl Cache {
         file: u16,
         xtea_keys: Option<[u32; 4]>,
     ) -> Vec<u8> {
-        let archive_here = &self.archives[&(archive as u8)].read(group, file, xtea_keys);
+        //let archive_here = &self.archives[&(archive as u8)].read(group, file, xtea_keys);
+
+        let index = &self.archives[&(archive as u8)].index;
+
+        let archive_data2_compress = self.store_new.read(archive as u8, group);
+        let archive_data2 = Js5Compression::uncompress(archive_data2_compress, xtea_keys);
+
+        trace!(
+            "Some data here: {} {} {}",
+            archive_data2[0],
+            archive_data2[1],
+            archive_data2[2]
+        );
+
+        // Now begin going over the stripes
+        let stripes = *archive_data2.last().unwrap();
+        trace!("Stripes: {}", stripes);
+
+        let data_index = 0;
+        let trailer_index = archive_data2.len()
+            - (stripes as usize * index.groups.get(&(group as u32)).unwrap().files.len() * 4)
+                as usize
+            - 1;
+
+        trace!("Trailer index: {}", trailer_index);
+
+        let mut readerrr = Cursor::new(&archive_data2[trailer_index..]);
+
+        let mut lens = vec![0; index.groups.get(&(group as u32)).unwrap().files.len()];
+
+        for i in 0..stripes {
+            let mut prev_len = 0;
+            for j in &mut lens {
+                prev_len += readerrr.read_i32().unwrap();
+                *j += prev_len;
+            }
+        }
+
+        let mut file_reader_stuff = Cursor::new(&archive_data2);
+
+        let mut files_final: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
+
+        for (x, y) in &index.groups.get(&(group as u32)).unwrap().files {
+            files_final.insert(*x, vec![0; lens[*x as usize] as usize]);
+        }
+
+        for i in 0..stripes {
+            let mut prev_len = 0;
+            for j in 0..index.groups.get(&(group as u32)).unwrap().files.len() {
+                prev_len += lens[j];
+                file_reader_stuff
+                    .read_exact(&mut files_final.get_mut(&(j as u32)).unwrap())
+                    .unwrap();
+            }
+        }
+
+        files_final.get(&(file as u32)).unwrap().to_vec()
+
+        // SKIP BELOW FOR THE TIME BEING, ALREADY DONE
+        // !!!!!!!!!
+        // !!!!!!!!!!
 
         // Instructions on cache.read(2, 10, 1042):
         /*
@@ -960,7 +1022,6 @@ impl Cache {
         }
 
         files_final.get(&(file as u32)).unwrap().to_vec()*/
-        Vec::new()
     }
 
     fn read_archive_group_data(&self, archive: usize, group: u16) -> Vec<u8> {
