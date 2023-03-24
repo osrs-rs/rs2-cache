@@ -78,7 +78,7 @@ struct IndexEntry {
     block: u32,
 }
 
-struct DiskStore {
+pub struct DiskStore {
     root: String,
     data: Mmap,
     music_data: Option<Mmap>,
@@ -93,10 +93,93 @@ impl FlatFileStore {
     }
 }
 
-struct Js5Compression {}
+// XTEA
+
+const ROUNDS: u32 = 32;
+const RATIO: u32 = 0x9E3779B9;
+
+/// Enciphers the data with the given XTEA keys. Defaults to 32 rounds.
+
+pub fn encipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
+    let blocks = data.len() / 8;
+    let mut buf = data.to_vec();
+
+    let mut index = 0;
+    for _ in 0..blocks {
+        let mut v0 = u32::from_be_bytes([
+            data[index],
+            data[index + 1],
+            data[index + 2],
+            data[index + 3],
+        ]);
+        let mut v1 = u32::from_be_bytes([
+            data[index + 4],
+            data[index + 5],
+            data[index + 6],
+            data[index + 7],
+        ]);
+        let mut sum = 0_u32;
+        for _ in 0..ROUNDS {
+            v0 = v0.wrapping_sub(
+                (((v1 << 4) ^ (v1 >> 5)).wrapping_add(v1))
+                    ^ (sum.wrapping_add(keys[(sum & 3) as usize])),
+            );
+            sum = sum.wrapping_sub(RATIO);
+            v1 = v1.wrapping_sub(
+                (((v0 << 4) ^ (v0 >> 5)).wrapping_add(v0))
+                    ^ (sum.wrapping_add(keys[((sum >> 11) & 3) as usize])),
+            );
+        }
+        buf[index..index + 4].copy_from_slice(&v0.to_be_bytes());
+        buf[index + 4..index + 8].copy_from_slice(&v1.to_be_bytes());
+
+        index += 8;
+    }
+
+    buf
+}
+
+/// Deciphers the data with the given XTEA keys. Defaults to 32 rounds.
+
+pub fn decipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
+    let blocks = data.len() / 8;
+    let mut buf = data.to_vec();
+
+    let mut index = 0;
+    for _ in 0..blocks {
+        let mut v0 =
+            u32::from_be_bytes([buf[index], buf[index + 1], buf[index + 2], buf[index + 3]]);
+        let mut v1 = u32::from_be_bytes([
+            buf[index + 4],
+            buf[index + 5],
+            buf[index + 6],
+            buf[index + 7],
+        ]);
+        let mut sum = ROUNDS.wrapping_mul(RATIO);
+        for _ in 0..ROUNDS {
+            v1 = v1.wrapping_sub(
+                (((v0 << 4) ^ (v0 >> 5)).wrapping_add(v0))
+                    ^ (sum.wrapping_add(keys[((sum >> 11) & 3) as usize])),
+            );
+            sum = sum.wrapping_sub(RATIO);
+            v0 = v0.wrapping_sub(
+                (((v1 << 4) ^ (v1 >> 5)).wrapping_add(v1))
+                    ^ (sum.wrapping_add(keys[(sum & 3) as usize])),
+            );
+        }
+        buf[index..index + 4].copy_from_slice(&v0.to_be_bytes());
+        buf[index + 4..index + 8].copy_from_slice(&v1.to_be_bytes());
+
+        index += 8;
+    }
+
+    buf
+}
+
+pub struct Js5Compression {}
 
 impl Js5Compression {
-    fn uncompress<T: AsRef<[u8]>>(input: T, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
+    pub fn uncompress<T: AsRef<[u8]>>(input: T, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
         let mut input_ref = input.as_ref();
 
         if input_ref.as_ref().len() < 5 {
@@ -116,11 +199,7 @@ impl Js5Compression {
             }
 
             if let Some(xtea_keys) = xtea_keys {
-                let xtea = XTEA::new(&xtea_keys);
-
-                let mut output = vec![0; len as usize];
-                xtea.decipher_u8slice::<BE>(input_ref, &mut output);
-                return output;
+                return decipher(input_ref, &xtea_keys);
             }
 
             return input_ref.to_vec();
@@ -153,11 +232,7 @@ impl Js5Compression {
 
     fn decrypt<T: AsRef<[u8]>>(input: T, len: i32, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
         if let Some(xtea_keys) = xtea_keys {
-            let xtea = XTEA::new(&xtea_keys);
-
-            let mut output = vec![0; len as usize];
-            xtea.decipher_u8slice::<BE>(input.as_ref(), &mut output);
-            output
+            decipher(&input.as_ref(), &xtea_keys)
         } else {
             input.as_ref().to_vec()[..len as usize].to_vec()
         }
@@ -468,7 +543,7 @@ impl Group {
     }
 }
 
-trait Store {
+pub trait Store {
     fn list(&self, archive: u8) -> Vec<u32>;
     fn read(&self, archive: u8, group: u16) -> Vec<u8>;
 }
@@ -537,19 +612,14 @@ impl Archive for CacheArchive {
         trace!("get unpacked");
         // TODO: Handle unpacked cache
 
-        // DONE
         let compressed = self.read_packed(entry_id, &store);
 
-        // DONE
         self.verify_compressed(&compressed, entry);
 
-        // DONE
         let buf = Js5Compression::uncompress(compressed, key);
 
-        // DONE
         self.verify_uncompressed(&buf, entry);
 
-        // TODO
         let files = Group::unpack(buf, entry, entry_id, &self.index);
 
         let unpacked = Unpacked {
