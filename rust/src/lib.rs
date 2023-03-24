@@ -844,7 +844,9 @@ pub unsafe extern "C" fn cache_read(
     cache_ptr: *mut Cache,
     // Archive id
     archive: u8,
+    // Group id
     group: u16,
+    // File id
     file: u16,
     xtea_keys_arg: *const [u32; 4],
     // Output length
