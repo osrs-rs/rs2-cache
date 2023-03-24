@@ -813,14 +813,8 @@ impl Cache {
     /// * `group` - The group to read from
     /// * `file` - The file to read
     /// * `xtea_keys` - The XTEA keys to use for decryption. If None, the file will not be decrypted
-    pub fn read(
-        &self,
-        archive: u16,
-        group: u16,
-        file: u16,
-        xtea_keys: Option<[u32; 4]>,
-    ) -> Vec<u8> {
-        self.archives[&(archive as u8)].read(group, file, xtea_keys, &self.store)
+    pub fn read(&self, archive: u8, group: u16, file: u16, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
+        self.archives[&archive].read(group, file, xtea_keys, &self.store)
     }
 }
 
@@ -849,7 +843,7 @@ pub unsafe extern "C" fn cache_read(
     // Pointer to the cache
     cache_ptr: *mut Cache,
     // Archive id
-    archive: u16,
+    archive: u8,
     group: u16,
     file: u16,
     xtea_keys_arg: *const [u32; 4],
