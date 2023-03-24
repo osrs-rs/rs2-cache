@@ -1,4 +1,5 @@
 pub use rs2cache::cache_read;
+use rs2cache::Cache;
 use std::{ptr, slice};
 use tracing::trace;
 
@@ -9,6 +10,13 @@ fn test_cache_open() {
     // Simply perform the setup as that is the same
     // Change this if the setup changes
     assert!(!common::setup().is_null())
+}
+
+#[test]
+fn test_cache_read() {
+    let cache = Cache::open("./data/cache").unwrap();
+
+    cache.read(2, 10, 1042, None);
 }
 
 /*#[test]
