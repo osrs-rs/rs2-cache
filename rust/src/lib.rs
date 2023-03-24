@@ -347,9 +347,9 @@ impl DiskStore {
     fn check_group(&self, archive: u8, group: u16) {
         self.check_archive(archive);
 
-        if group < 0 {
+        /*if group < 0 {
             panic!("group {} is out of bounds", group);
-        }
+        }*/
     }
 
     fn read_index_entry(&self, archive: u8, group: u16) -> Option<IndexEntry> {
@@ -518,9 +518,9 @@ impl Archive for CacheArchive {
         key: Option<[u32; 4]>,
         store: &Box<dyn Store>,
     ) -> Vec<u8> {
-        if group < 0 || file < 0 {
+        /*if group < 0 || file < 0 {
             panic!("group {} or file {} is out of bounds", group, file);
-        }
+        }*/
 
         let entry = self.index.groups.get(&(group as u32)).unwrap();
         let unpacked = self.get_unpacked(entry, group, key, store);
