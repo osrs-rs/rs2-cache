@@ -1,7 +1,14 @@
-use byteorder::{ByteOrder, BE};
 use bzip2::read::BzDecoder;
-use extended_tea::XTEA;
 use flate2::bufread::GzDecoder;
+use lzma_rs::{
+    compress,
+    decompress::{
+        self,
+        raw::{Lzma2Decoder, LzmaDecoder},
+    },
+    lzma2_compress, lzma2_decompress, lzma_compress, lzma_compress_with_options, lzma_decompress,
+    lzma_decompress_with_options,
+};
 use memmap2::Mmap;
 use osrs_bytes::ReadExt;
 use std::{
@@ -29,6 +36,7 @@ const INDEX_ENTRY_SIZE: usize = 6;
 const COMPRESSION_TYPE_NONE: u8 = 0;
 const COMPRESSION_TYPE_BZIP: u8 = 1;
 const COMPRESSION_TYPE_GZIP: u8 = 2;
+const COMPRESSION_TYPE_LZMA: u8 = 3;
 
 const INDEX_PATH: &str = "main_file_cache.idx";
 const DATA_PATH: &str = "main_file_cache.dat2";
@@ -52,9 +60,9 @@ fn djb2_hash<T: AsRef<str>>(string: T) -> u32 {
     let mut hash: u32 = 0;
 
     // Iterate over each byte in the string and update the hash value.
-    for char in string {
+    for c in string {
         // Update the hash value using the djb2 algorithm.
-        hash = *char as u32 + ((hash << 5).wrapping_sub(hash));
+        hash = ((hash << 5).wrapping_sub(hash)) + *c as u32;
     }
 
     // Return the final hash value.
@@ -210,7 +218,7 @@ impl Js5Compression {
             panic!("Data truncated");
         }
 
-        let plain_text = Self::decrypt(input_ref, len, xtea_keys);
+        let plain_text = Self::decrypt(input_ref, len_with_uncompressed_len, xtea_keys);
         let mut plain_text_csr = Cursor::new(plain_text);
 
         let uncompressed_len = plain_text_csr.read_i32().unwrap();
@@ -221,11 +229,13 @@ impl Js5Compression {
         // Copy bytes from the cursor to a buffer skipping over already read ones
         let mut plain_text =
             vec![0; plain_text_csr.get_ref().len() - plain_text_csr.position() as usize];
+
         plain_text_csr.read_exact(&mut plain_text).unwrap();
 
         match type_id {
             COMPRESSION_TYPE_BZIP => decompress_archive_bzip2(plain_text, uncompressed_len as u32),
             COMPRESSION_TYPE_GZIP => decompress_archive_gzip(plain_text, uncompressed_len as u32),
+            COMPRESSION_TYPE_LZMA => decompress_archive_lzma(plain_text, uncompressed_len as u32),
             _ => panic!("Unknown compression type {}", type_id),
         }
     }
@@ -264,6 +274,24 @@ fn decompress_archive_gzip<T: AsRef<[u8]>>(archive_data: T, decompressed_size: u
     decompressed_data
 }
 
+// Decompress using lzma
+fn decompress_archive_lzma<T: AsRef<[u8]>>(archive_data: T, decompressed_size: u32) -> Vec<u8> {
+    let mut decomp: Vec<u8> = Vec::new();
+
+    lzma_decompress_with_options(
+        &mut archive_data.as_ref(),
+        &mut decomp,
+        &decompress::Options {
+            unpacked_size: decompress::UnpackedSize::UseProvided(Some(decompressed_size as u64)),
+            memlimit: None,
+            allow_incomplete: false,
+        },
+    )
+    .unwrap();
+
+    decomp
+}
+
 impl Store for DiskStore {
     fn list(&self, archive: u8) -> Vec<u32> {
         let index = &self.indexes[&(archive as usize)];
@@ -284,7 +312,7 @@ impl Store for DiskStore {
         groups
     }
 
-    fn read(&self, archive: u8, group: u16) -> Vec<u8> {
+    fn read(&self, archive: u8, group: u32) -> Vec<u8> {
         let entry = self.read_index_entry(archive, group).unwrap();
         if entry.block == 0 {
             panic!("file not found exception");
@@ -359,7 +387,7 @@ impl Store for FlatFileStore {
         todo!()
     }
 
-    fn read(&self, archive: u8, group: u16) -> Vec<u8> {
+    fn read(&self, archive: u8, group: u32) -> Vec<u8> {
         todo!()
     }
 }
@@ -419,7 +447,7 @@ impl DiskStore {
         }
     }
 
-    fn check_group(&self, archive: u8, group: u16) {
+    fn check_group(&self, archive: u8, group: u32) {
         self.check_archive(archive);
 
         /*if group < 0 {
@@ -427,7 +455,7 @@ impl DiskStore {
         }*/
     }
 
-    fn read_index_entry(&self, archive: u8, group: u16) -> Option<IndexEntry> {
+    fn read_index_entry(&self, archive: u8, group: u32) -> Option<IndexEntry> {
         self.check_group(archive, group);
 
         let index = &self.indexes[&(archive as usize)];
@@ -451,7 +479,7 @@ trait Archive {
     fn is_dirty(&self) -> bool;
     fn read(
         &self,
-        group: u16,
+        group: u32,
         file: u16,
         xtea_keys: Option<[u32; 4]>,
         store: &Box<dyn Store>,
@@ -459,11 +487,11 @@ trait Archive {
     fn get_unpacked(
         &self,
         entry: &Js5IndexEntry,
-        entry_id: u16,
+        entry_id: u32,
         key: Option<[u32; 4]>,
         store: &Box<dyn Store>,
     ) -> Unpacked;
-    fn read_packed(&self, group: u16, store: &Box<dyn Store>) -> Vec<u8>;
+    fn read_packed(&self, group: u32, store: &Box<dyn Store>) -> Vec<u8>;
     fn verify_compressed(&self, buf: &Vec<u8>, entry: &Js5IndexEntry);
     fn verify_uncompressed(&self, buf: &Vec<u8>, entry: &Js5IndexEntry);
 }
@@ -474,7 +502,7 @@ impl Group {
     pub fn unpack(
         buf: Vec<u8>,
         entry: &Js5IndexEntry,
-        entry_id: u16,
+        entry_id: u32,
         js5_index: &Js5Index,
     ) -> BTreeMap<u32, Vec<u8>> {
         // Now begin going over the stripes
@@ -517,10 +545,9 @@ impl Group {
 
         let mut file_reader_stuff = Cursor::new(&buf);
 
-        let mut files_final = BTreeMap::new();
-
+        let mut files = BTreeMap::new();
         for (x, y) in &js5_index.groups.get(&(entry_id as u32)).unwrap().files {
-            files_final.insert(*x, vec![0; lens[*x as usize] as usize]);
+            files.insert(*x, vec![0; lens[*x as usize] as usize]);
         }
 
         for i in 0..stripes {
@@ -534,18 +561,18 @@ impl Group {
             {
                 prev_len += lens[j];
                 file_reader_stuff
-                    .read_exact(&mut files_final.get_mut(&(j as u32)).unwrap())
+                    .read_exact(&mut files.get_mut(&(j as u32)).unwrap())
                     .unwrap();
             }
         }
 
-        files_final
+        files
     }
 }
 
 pub trait Store {
     fn list(&self, archive: u8) -> Vec<u32>;
-    fn read(&self, archive: u8, group: u16) -> Vec<u8>;
+    fn read(&self, archive: u8, group: u32) -> Vec<u8>;
 }
 
 fn store_open(path: &str) -> Box<dyn Store> {
@@ -588,7 +615,7 @@ impl Archive for CacheArchive {
 
     fn read(
         &self,
-        group: u16,
+        group: u32,
         file: u16,
         key: Option<[u32; 4]>,
         store: &Box<dyn Store>,
@@ -605,7 +632,7 @@ impl Archive for CacheArchive {
     fn get_unpacked(
         &self,
         entry: &Js5IndexEntry,
-        entry_id: u16,
+        entry_id: u32,
         key: Option<[u32; 4]>,
         store: &Box<dyn Store>,
     ) -> Unpacked {
@@ -632,7 +659,7 @@ impl Archive for CacheArchive {
         unpacked
     }
 
-    fn read_packed(&self, group: u16, store: &Box<dyn Store>) -> Vec<u8> {
+    fn read_packed(&self, group: u32, store: &Box<dyn Store>) -> Vec<u8> {
         store.read(self.archive, group)
     }
 
@@ -857,7 +884,7 @@ impl Cache {
     fn init(&mut self) {
         for archive in self.store.list(ARCHIVESET as u8) {
             //trace!("Loading archive {}", archive);
-            let compressed = self.store.read(ARCHIVESET as u8, archive as u16);
+            let compressed = self.store.read(ARCHIVESET as u8, archive);
 
             let buf = Js5Compression::uncompress(compressed, None);
             trace!("Uncompressed archive {} to {} bytes", archive, buf.len());
@@ -883,7 +910,7 @@ impl Cache {
     /// * `group` - The group to read from
     /// * `file` - The file to read
     /// * `xtea_keys` - The XTEA keys to use for decryption. If None, the file will not be decrypted
-    pub fn read(&self, archive: u8, group: u16, file: u16, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
+    pub fn read(&self, archive: u8, group: u32, file: u16, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
         self.archives[&archive].read(group, file, xtea_keys, &self.store)
     }
 }
@@ -915,7 +942,7 @@ pub unsafe extern "C" fn cache_read(
     // Archive id
     archive: u8,
     // Group id
-    group: u16,
+    group: u32,
     // File id
     file: u16,
     xtea_keys_arg: *const [u32; 4],

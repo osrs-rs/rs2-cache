@@ -1,5 +1,26 @@
-use rs2cache::{Cache, DiskStore, Store};
+use rs2cache::{DiskStore, Store};
 use std::path::Path;
+
+#[test]
+fn test_list_groups() {
+    read_test("single-block", |store| {
+        assert_eq!(vec![1], store.list(255));
+    });
+    read_test("fragmented", |store| {
+        assert_eq!(vec![0, 1], store.list(255));
+    });
+    read_test("single-block-extended", |store| {
+        assert_eq!(vec![65536], store.list(255));
+    });
+}
+
+// TODO: Handle this error
+/*#[test]
+fn test_list_non_existent() {
+    read_test("empty", |store| {
+        assert_eq!(vec![1], store.list(255));
+    });
+}*/
 
 #[test]
 fn test_read_single_block() {
@@ -10,13 +31,14 @@ fn test_read_single_block() {
     });
 }
 
-// TODO
-/*#[test]
+#[test]
 fn test_read_single_block_extended() {
-    let store = read_test("single-block");
-    let bytes = store.read(255, 1);
-    assert_eq!("OpenRS2".as_bytes(), bytes);
-}*/
+    read_test("single-block-extended", |store| {
+        let actual = store.read(255, 65536);
+        let expected = "OpenRS2".as_bytes();
+        assert_eq!(expected, actual);
+    });
+}
 
 #[test]
 fn test_read_two_blocks() {
@@ -27,7 +49,14 @@ fn test_read_two_blocks() {
     });
 }
 
-// TODO: Extended for two blocks too here
+#[test]
+fn test_read_two_blocks_extended() {
+    read_test("two-blocks-extended", |store| {
+        let actual = store.read(255, 65536);
+        let expected = "OpenRS2".repeat(100).into_bytes();
+        assert_eq!(expected, actual);
+    });
+}
 
 #[test]
 fn test_read_multiple_blocks() {
@@ -38,14 +67,23 @@ fn test_read_multiple_blocks() {
     });
 }
 
-// TODO: Extended for multiple blocks too here
+#[test]
+fn test_read_multiple_blocks_extended() {
+    read_test("multiple-blocks-extended", |store| {
+        let actual = store.read(255, 65536);
+        let expected = "OpenRS2".repeat(1000).into_bytes();
+        assert_eq!(expected, actual);
+    });
+}
 
-// Error handling here, simply follow the trace of error aand handle accordingly
+// TODO: Error handling here, simply follow the trace of error and handle accordingly
 /*#[test]
 fn test_read_non_existent() {
-    let store = read_test("single-block");
-    let actual = store.read(0, 0);
-    assert_eq!(0, 0);
+    read_test("single-block", |store| {
+        store.read(0, 0);
+        store.read(255, 0);
+        store.read(255, 2);
+    });
 }*/
 
 #[test]

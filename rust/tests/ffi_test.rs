@@ -14,7 +14,7 @@ fn test_cache_open() {
 
 #[test]
 fn test_cache_read() {
-    /*let cache = Cache::open("./data/cache").unwrap();
+    let cache = Cache::open("./data/cache").unwrap();
 
     let buf = cache.read(2, 10, 1042, None);
     assert_eq!(
@@ -27,7 +27,7 @@ fn test_cache_read() {
             0x70, 0x61, 0x72, 0x74, 0x79, 0x68, 0x61, 0x74, 0x00, 0x61, 0x04, 0x13, 0x94, 0x38,
             0x35, 0x00
         ]
-    )*/
+    )
 }
 
 /*#[test]
