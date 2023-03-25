@@ -513,8 +513,37 @@ impl Group {
         entry_id: u32,
         js5_index: &Js5Index,
     ) -> BTreeMap<u32, Vec<u8>> {
-        println!("Buf: {:?}", buf);
-        println!("Length of buf: {}", buf.len());
+        if js5_index
+            .groups
+            .get(&(entry_id as u32))
+            .unwrap()
+            .files
+            .is_empty()
+        {
+            panic!("Group {} has no files", entry_id)
+        }
+
+        if js5_index
+            .groups
+            .get(&(entry_id as u32))
+            .unwrap()
+            .files
+            .len()
+            == 1
+        {
+            let single_entry = js5_index
+                .groups
+                .get(&(entry_id as u32))
+                .unwrap()
+                .files
+                .keys()
+                .next()
+                .unwrap();
+
+            let mut files = BTreeMap::new();
+            files.insert(*single_entry, buf);
+            return files;
+        }
 
         // Now begin going over the stripes
         let stripes = *buf.last().unwrap();
