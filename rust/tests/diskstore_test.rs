@@ -95,15 +95,10 @@ fn test_read_fragmented() {
     });
 }
 
-fn read_test<T, F>(str: T, func: F)
+fn read_test<P, F>(p: P, f: F)
 where
-    T: AsRef<str>,
+    P: AsRef<Path>,
     F: FnOnce(DiskStore),
 {
-    func(DiskStore::open(
-        Path::new("tests/data/disk-store")
-            .join(str.as_ref())
-            .to_str()
-            .unwrap(),
-    ))
+    f(DiskStore::open(Path::new("tests/data/disk-store").join(p)))
 }

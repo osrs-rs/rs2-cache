@@ -69,6 +69,16 @@ fn test_uncompress_bzip2_encrypted() {
     });
 }
 
+#[test]
+fn test_uncompress_lzma_encrypted() {
+    read("lzma-encrypted.dat", |data| {
+        assert_eq!(
+            "OpenRS2".as_bytes(),
+            Js5Compression::uncompress(data, Some(KEY))
+        );
+    });
+}
+
 // Impl this later once Results are implemented
 /*#[test]
 fn test_bzip2_eof() {
@@ -77,9 +87,9 @@ fn test_bzip2_eof() {
     });
 }*/
 
-fn read<T, F>(p: T, f: F)
+fn read<P, F>(p: P, f: F)
 where
-    T: AsRef<Path>,
+    P: AsRef<Path>,
     F: FnOnce(Mmap),
 {
     f(
@@ -89,3 +99,4 @@ where
 }
 
 const KEY: [u32; 4] = [0x00112233, 0x44556677, 0x8899AABB, 0xCCDDEEFF];
+const INVALID_KEY: [u32; 4] = [0x01234567, 0x89ABCDEF, 0x01234567, 0x89ABCDEF];

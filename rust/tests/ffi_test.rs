@@ -13,8 +13,10 @@ fn test_cache_open() {
 }
 
 #[test]
-fn test_cache_read() {
-    let cache = Cache::open("./data/cache").unwrap();
+fn test_cache_read_diskstore_single_block() {
+    println!("here1");
+    let cache = Cache::open("data/cache").unwrap();
+    println!("here2");
 
     let buf = cache.read(2, 10, 1042, None);
     assert_eq!(
@@ -29,6 +31,14 @@ fn test_cache_read() {
         ]
     )
 }
+
+/*#[test]
+fn test_huffman() {
+    let cache = Cache::open("data/cache").unwrap();
+
+    let buf = cache.read_named(10, "huffman", 0, None);
+    assert_eq!(buf, [1, 2, 3, 4])
+}*/
 
 /*#[test]
 fn test_cache_read() {

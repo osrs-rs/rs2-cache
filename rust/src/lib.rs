@@ -195,6 +195,7 @@ impl Js5Compression {
         }
 
         let type_id = input_ref.read_u8().unwrap();
+        // TODO: Check if type_id is correct here and panic if not or just like throw an error and return here
 
         let len = input_ref.read_i32().unwrap();
         if len < 0 {
@@ -393,9 +394,9 @@ impl Store for FlatFileStore {
 }
 
 impl DiskStore {
-    pub fn open(path: &str) -> DiskStore {
-        let js5_data_path = Path::new(path).join(DATA_PATH);
-        let legacy_data_path = Path::new(path).join(LEGACY_DATA_PATH);
+    pub fn open<P: AsRef<Path>>(path: P) -> DiskStore {
+        let js5_data_path = Path::new(path.as_ref()).join(DATA_PATH);
+        let legacy_data_path = Path::new(path.as_ref()).join(LEGACY_DATA_PATH);
 
         // We check for js5_data_path first as it takes precedence.
         let legacy = !js5_data_path.exists();
@@ -408,7 +409,7 @@ impl DiskStore {
 
         let data = unsafe { Mmap::map(&File::open(data_path).unwrap()) }.unwrap();
 
-        let music_data_path = Path::new(path).join(MUSIC_DATA_PATH);
+        let music_data_path = Path::new(path.as_ref()).join(MUSIC_DATA_PATH);
         let music_data = if music_data_path.exists() {
             Some(unsafe { Mmap::map(&File::open(music_data_path).unwrap()).unwrap() })
         } else {
@@ -417,7 +418,7 @@ impl DiskStore {
 
         let mut archives = HashMap::new();
         for i in 0..MAX_ARCHIVE + 1 {
-            let path = Path::new(path).join(format!("{}{}", INDEX_PATH, i));
+            let path = Path::new(path.as_ref()).join(format!("{}{}", INDEX_PATH, i));
             if Path::new(&path).exists() {
                 let index = unsafe { Mmap::map(&File::open(&path).unwrap()).unwrap() };
                 archives.insert(i, index);
@@ -425,7 +426,7 @@ impl DiskStore {
         }
 
         DiskStore {
-            root: path.to_string(),
+            root: String::from(path.as_ref().to_str().unwrap()),
             data,
             music_data,
             indexes: archives,
@@ -484,6 +485,13 @@ trait Archive {
         xtea_keys: Option<[u32; 4]>,
         store: &Box<dyn Store>,
     ) -> Vec<u8>;
+    fn read_named_group(
+        &self,
+        group: u32,
+        file: u16,
+        xtea_keys: Option<[u32; 4]>,
+        store: &Box<dyn Store>,
+    ) -> Vec<u8>;
     fn get_unpacked(
         &self,
         entry: &Js5IndexEntry,
@@ -505,6 +513,9 @@ impl Group {
         entry_id: u32,
         js5_index: &Js5Index,
     ) -> BTreeMap<u32, Vec<u8>> {
+        println!("Buf: {:?}", buf);
+        println!("Length of buf: {}", buf.len());
+
         // Now begin going over the stripes
         let stripes = *buf.last().unwrap();
         trace!("Stripes: {}", stripes);
@@ -620,12 +631,25 @@ impl Archive for CacheArchive {
         key: Option<[u32; 4]>,
         store: &Box<dyn Store>,
     ) -> Vec<u8> {
-        /*if group < 0 || file < 0 {
-            panic!("group {} or file {} is out of bounds", group, file);
-        }*/
-
         let entry = self.index.groups.get(&(group as u32)).unwrap();
         let unpacked = self.get_unpacked(entry, group, key, store);
+        unpacked.read(file as u32)
+    }
+
+    fn read_named_group(
+        &self,
+        group_name_hash: u32,
+        file: u16,
+        key: Option<[u32; 4]>,
+        store: &Box<dyn Store>,
+    ) -> Vec<u8> {
+        let entry_id = self.index.get_named(group_name_hash).unwrap();
+        let entry = self.index.groups.get(&(entry_id as u32)).unwrap();
+
+        println!("entry1: {}", entry_id);
+        println!("entry: {:?}", entry);
+
+        let unpacked = self.get_unpacked(entry, entry_id, key, store);
         unpacked.read(file as u32)
     }
 
@@ -720,6 +744,7 @@ struct Js5Index {
     has_lengths: bool,
     has_uncompressed_checksums: bool,
     groups: BTreeMap<u32, Js5IndexEntry>,
+    name_hash_table: HashMap<u32, u32>,
 }
 
 impl Js5Index {
@@ -761,6 +786,7 @@ impl Js5Index {
             has_uncompressed_checksums: (flags & Js5IndexFlags::FlagUncompressedChecksums as u8)
                 != 0,
             groups: BTreeMap::new(),
+            name_hash_table: HashMap::new(),
         };
 
         trace!("Creating groups");
@@ -790,6 +816,7 @@ impl Js5Index {
         if index.has_names {
             for (id, group) in &mut index.groups {
                 group.name_hash = buf_ref.read_i32().unwrap();
+                index.name_hash_table.insert(group.name_hash as u32, *id);
             }
         }
 
@@ -866,6 +893,10 @@ impl Js5Index {
 
         index
     }
+
+    fn get_named(&self, name_hash: u32) -> Option<u32> {
+        self.name_hash_table.get(&name_hash).copied()
+    }
 }
 
 impl Cache {
@@ -912,6 +943,16 @@ impl Cache {
     /// * `xtea_keys` - The XTEA keys to use for decryption. If None, the file will not be decrypted
     pub fn read(&self, archive: u8, group: u32, file: u16, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
         self.archives[&archive].read(group, file, xtea_keys, &self.store)
+    }
+
+    pub fn read_named(
+        &self,
+        archive: u8,
+        group: &str,
+        file: u16,
+        xtea_keys: Option<[u32; 4]>,
+    ) -> Vec<u8> {
+        self.archives[&archive].read_named_group(djb2_hash(group), file, xtea_keys, &self.store)
     }
 }
 

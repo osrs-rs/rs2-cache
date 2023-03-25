@@ -13,40 +13,23 @@ jobs:
           include:
             - name: linux
               os: ubuntu-latest
-              unzip: unzip data/cache.zip -d rust/data
             - name: windows
               os: windows-latest
-              unzip: 7z x data/cache.zip -orust/data
             - name: macos
               os: macos-latest
-              unzip: unzip data/cache.zip -d rust/data
     
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install Rust Toolchain
+        run: rustup toolchain install stable --profile minimal -c rustfmt,clippy
 
       - name: Clippy
         run: cargo clippy --manifest-path=rust/Cargo.toml
 
       - name: Build
         run: cargo build --manifest-path=rust/Cargo.toml --verbose
-
-      - name: Fetch release
-        uses: dsaltares/fetch-gh-release-asset@master
-        with:
-          repo: 'osrs-rs/osrs-cache'
-          version: 'tags/test-data'
-          file: 'cache.zip'
-          target: 'data/cache.zip'
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Unzip
-        run: ${{ matrix.unzip }}
 
       - name: Run tests
         run: cargo test --manifest-path=rust/Cargo.toml --verbose
