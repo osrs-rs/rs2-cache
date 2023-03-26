@@ -1,23 +1,15 @@
 use bzip2::read::BzDecoder;
 use flate2::bufread::GzDecoder;
-use lzma_rs::{
-    compress,
-    decompress::{
-        self,
-        raw::{Lzma2Decoder, LzmaDecoder},
-    },
-    lzma2_compress, lzma2_decompress, lzma_compress, lzma_compress_with_options, lzma_decompress,
-    lzma_decompress_with_options,
-};
+use lzma_rs::{decompress, lzma_decompress_with_options};
 use memmap2::Mmap;
 use osrs_bytes::ReadExt;
 use std::{
     cmp,
     collections::{BTreeMap, HashMap},
     ffi::CStr,
-    fs::{self, File},
+    fs::File,
     i32,
-    io::{self, Cursor, Read, Seek, SeekFrom},
+    io::{self, Cursor, Read},
     mem,
     os::raw::c_char,
     path::Path,
@@ -93,7 +85,7 @@ pub struct DiskStore {
     indexes: HashMap<usize, Mmap>,
     legacy: bool,
 }
-struct FlatFileStore {}
+pub struct FlatFileStore {}
 
 impl FlatFileStore {
     pub fn open(path: &str) -> FlatFileStore {
@@ -106,9 +98,8 @@ impl FlatFileStore {
 const ROUNDS: u32 = 32;
 const RATIO: u32 = 0x9E3779B9;
 
-/// Enciphers the data with the given XTEA keys. Defaults to 32 rounds.
-
-pub fn encipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
+/// Enciphers the data with the given XTEA keys. Defaults to 32 rounds
+fn encipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
     let blocks = data.len() / 8;
     let mut buf = data.to_vec();
 
@@ -148,8 +139,7 @@ pub fn encipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
 }
 
 /// Deciphers the data with the given XTEA keys. Defaults to 32 rounds.
-
-pub fn decipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
+fn decipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
     let blocks = data.len() / 8;
     let mut buf = data.to_vec();
 
@@ -275,7 +265,6 @@ fn decompress_archive_bzip2<T: AsRef<[u8]>>(archive_data: T, decompressed_size: 
 fn decompress_archive_gzip<T: AsRef<[u8]>>(archive_data: T, decompressed_size: u32) -> Vec<u8> {
     let mut decompressed_data = vec![0; decompressed_size as usize];
 
-    // Skip the first 9 bytes of the archive data to get to the gzip header
     let mut decompressor = GzDecoder::new(archive_data.as_ref());
     decompressor.read_exact(&mut decompressed_data).unwrap();
 
@@ -307,7 +296,7 @@ impl Store for DiskStore {
 
         let mut groups = Vec::new();
         let mut group = 0;
-        while let Ok(_) = index_csr.read_u24() {
+        while index_csr.read_u24().is_ok() {
             let block = index_csr.read_u24().unwrap();
             if block != 0 {
                 groups.push(group);
@@ -445,12 +434,6 @@ impl DiskStore {
         }
     }
 
-    fn check_archive(&self, archive: u8) {
-        if archive > MAX_ARCHIVE as u8 {
-            panic!("archive {} is out of bounds", archive);
-        }
-    }
-
     fn get_data(&self, archive: u8) -> &Mmap {
         if archive == MUSIC_ARCHIVE && self.music_data.is_some() {
             self.music_data.as_ref().unwrap()
@@ -459,17 +442,7 @@ impl DiskStore {
         }
     }
 
-    fn check_group(&self, archive: u8, group: u32) {
-        self.check_archive(archive);
-
-        /*if group < 0 {
-            panic!("group {} is out of bounds", group);
-        }*/
-    }
-
     fn read_index_entry(&self, archive: u8, group: u32) -> Option<IndexEntry> {
-        self.check_group(archive, group);
-
         let index = &self.indexes[&(archive as usize)];
 
         let pos = (group as usize) * INDEX_ENTRY_SIZE;
@@ -515,105 +488,69 @@ trait Archive {
     fn verify_uncompressed(&self, buf: &Vec<u8>, entry: &Js5IndexEntry);
 }
 
-struct Group {}
+pub struct Group {}
 
 impl Group {
-    pub fn unpack(
-        buf: Vec<u8>,
-        entry: &Js5IndexEntry,
-        entry_id: u32,
-        js5_index: &Js5Index,
-    ) -> BTreeMap<u32, Vec<u8>> {
-        if js5_index
-            .groups
-            .get(&(entry_id as u32))
-            .unwrap()
-            .files
-            .is_empty()
-        {
-            panic!("Group {} has no files", entry_id)
+    pub fn unpack(input: Vec<u8>, group: &BTreeMap<u32, Js5IndexFile>) -> BTreeMap<u32, Vec<u8>> {
+        if group.is_empty() {
+            panic!("Group has no files")
         }
 
-        if js5_index
-            .groups
-            .get(&(entry_id as u32))
-            .unwrap()
-            .files
-            .len()
-            == 1
-        {
-            let single_entry = js5_index
-                .groups
-                .get(&(entry_id as u32))
-                .unwrap()
-                .files
-                .keys()
-                .next()
-                .unwrap();
+        println!("Input: {:?}", input);
 
+        if group.len() == 1 {
+            let single_entry = group.keys().next().unwrap();
             let mut files = BTreeMap::new();
-            files.insert(*single_entry, buf);
+            files.insert(*single_entry, input);
             return files;
         }
 
+        let mut input_reader = Cursor::new(&input);
+
         // Now begin going over the stripes
-        let stripes = *buf.last().unwrap();
-        trace!("Stripes: {}", stripes);
+        let stripes = *input.last().unwrap();
+        println!("Stripes: {}", stripes);
 
-        let data_index = 0;
-        let trailer_index = buf.len()
-            - (stripes as usize
-                * js5_index
-                    .groups
-                    .get(&(entry_id as u32))
-                    .unwrap()
-                    .files
-                    .len()
-                * 4) as usize
-            - 1;
+        let mut data_index = input_reader.position() as i32;
+        let trailer_index = input.len() - (stripes as usize * group.len() * 4) as usize - 1;
 
-        trace!("Trailer index: {}", trailer_index);
+        println!("Trailer index: {}", trailer_index);
 
-        let mut readerrr = Cursor::new(&buf[trailer_index..]);
+        println!("STRIPES YO: {:?}", &input[trailer_index..]);
 
-        let mut lens = vec![
-            0;
-            js5_index
-                .groups
-                .get(&(entry_id as u32))
-                .unwrap()
-                .files
-                .len()
-        ];
+        input_reader.set_position(trailer_index as u64);
 
+        let mut lens = vec![0; group.len()];
         for i in 0..stripes {
             let mut prev_len = 0;
-            for j in &mut lens {
-                prev_len += readerrr.read_i32().unwrap();
+            for j in lens.iter_mut() {
+                prev_len += input_reader.read_i32().unwrap();
                 *j += prev_len;
             }
         }
 
-        let mut file_reader_stuff = Cursor::new(&buf);
+        input_reader.set_position(trailer_index as u64);
 
         let mut files = BTreeMap::new();
-        for (x, y) in &js5_index.groups.get(&(entry_id as u32)).unwrap().files {
-            files.insert(*x, vec![0; lens[*x as usize] as usize]);
+        for (i, (x, y)) in group.iter().enumerate() {
+            files.insert(*x, Vec::with_capacity(lens[i] as usize));
         }
 
-        for i in 0..stripes {
+        for _ in 0..stripes {
             let mut prev_len = 0;
-            for j in 0..js5_index
-                .groups
-                .get(&(entry_id as u32))
-                .unwrap()
-                .files
-                .len()
-            {
-                prev_len += lens[j];
-                file_reader_stuff
-                    .read_exact(&mut files.get_mut(&(j as u32)).unwrap())
-                    .unwrap();
+            for (i, (x, y)) in group.iter().enumerate() {
+                prev_len += input_reader.read_i32().unwrap();
+                let dst = files.get_mut(&(*x as u32)).unwrap();
+                let cap = dst.capacity();
+                dst.extend_from_slice(
+                    &input[data_index as usize..(data_index + prev_len) as usize].to_vec(),
+                );
+                // Truncate to the correct length in case the buffer has
+                // too much data pushed into it.
+                // In OpenRS2 it a hard limit which is not supported in Rust
+                dst.truncate(cap);
+
+                data_index += prev_len;
             }
         }
 
@@ -621,6 +558,7 @@ impl Group {
     }
 }
 
+/// The store is responsible for reading and writing data of the various RS2 formats.
 pub trait Store {
     fn list(&self, archive: u8) -> Vec<u32>;
     fn read(&self, archive: u8, group: u32) -> Vec<u8>;
@@ -715,7 +653,10 @@ impl Archive for CacheArchive {
 
         self.verify_uncompressed(&buf, entry);
 
-        let files = Group::unpack(buf, entry, entry_id, &self.index);
+        let files = Group::unpack(
+            buf,
+            &self.index.groups.get(&(entry_id as u32)).unwrap().files,
+        );
 
         let unpacked = Unpacked {
             dirty: false,
@@ -763,8 +704,8 @@ enum Js5IndexFlags {
 }
 
 #[derive(Debug)]
-struct Js5IndexFile {
-    name_hash: i32,
+pub struct Js5IndexFile {
+    pub name_hash: i32,
 }
 
 #[derive(Debug)]
@@ -777,7 +718,7 @@ struct Js5IndexEntry {
     uncompressed_length: u32,
     digest: Option<bool>,
     capacity: u32,
-    files: HashMap<u32, Js5IndexFile>,
+    files: BTreeMap<u32, Js5IndexFile>,
 }
 
 struct Js5Index {
@@ -848,7 +789,7 @@ impl Js5Index {
                     uncompressed_length: 0,
                     digest: None,
                     capacity: 0,
-                    files: HashMap::new(),
+                    files: BTreeMap::new(),
                 },
             );
         });
@@ -1007,6 +948,15 @@ pub unsafe extern "C" fn cache_create(cache_ptr: *mut Cache, archive: u32) {}
 #[no_mangle]
 pub unsafe extern "C" fn cache_capacity(cache_ptr: *mut Cache, archive: u32) {}
 
+/// Open a cache at the given path
+///
+/// # Arguments
+///
+/// * `path` - The path to the cache
+///
+/// # Returns
+///
+/// A pointer to the cache
 #[no_mangle]
 pub unsafe extern "C" fn cache_open(path: *const c_char) -> *mut Cache {
     // Get CStr
@@ -1022,18 +972,28 @@ pub unsafe extern "C" fn cache_open(path: *const c_char) -> *mut Cache {
     Box::into_raw(Box::new(cache))
 }
 
+/// Read a file from the cache
+///
+/// # Arguments
+///
+/// * `cache_ptr` - The cache to read from
+/// * `archive` - The archive to read from
+/// * `group` - The group to read from
+/// * `file` - The file to read
+/// * `xtea_keys` - The optional XTEA keys to use for decryption
+/// * `out_len` - The length of the returned buffer
+///
+/// # Returns
+///
+/// The function returns a pointer to the buffer containing the file data, where the length is stored in the `out_len` variable.
+/// The caller is responsible for freeing the buffer using the function `cache_free`.
 #[no_mangle]
 pub unsafe extern "C" fn cache_read(
-    // Pointer to the cache
     cache_ptr: *mut Cache,
-    // Archive id
     archive: u8,
-    // Group id
     group: u32,
-    // File id
     file: u16,
     xtea_keys_arg: *const [u32; 4],
-    // Output length
     out_len: *mut u32,
 ) -> *mut u8 {
     trace!("cache_read(cache_ptr = {:?}, archive = {}, group = {}, file = {}, xtea_keys = {:?}, out_len = {:?})", cache_ptr, archive, group, file, xtea_keys_arg, out_len);
@@ -1056,18 +1016,32 @@ pub unsafe extern "C" fn cache_read(
     data
 }
 
+/// Read a named group from the cache
+///
+/// # Arguments
+///
+/// * `cache_ptr` - The cache to read from
+/// * `archive` - The archive to read from
+/// * `group` - The group to read from
+/// * `file` - The file to read
+/// * `xtea_keys` - The optional XTEA keys to use for decryption
+/// * `out_len` - The length of the returned buffer
+///
+/// # Returns
+///
+/// The function returns a pointer to the buffer containing the file data, where the length is stored in the `out_len` variable.
+/// The caller is responsible for freeing the buffer using the function `cache_free`.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers.
 #[no_mangle]
 pub unsafe extern "C" fn cache_read_named_group(
-    // Pointer to the cache
     cache_ptr: *mut Cache,
-    // Archive id
     archive: u8,
-    // Group id
     group: *const c_char,
-    // File id
     file: u16,
     xtea_keys_arg: *const [u32; 4],
-    // Output length
     out_len: *mut u32,
 ) -> *mut u8 {
     // Dereference the cache
@@ -1090,8 +1064,18 @@ pub unsafe extern "C" fn cache_read_named_group(
     data
 }
 
+/// Free a buffer returned by cache read functions
+///
+/// # Arguments
+///
+/// * `buffer` - The buffer to free
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences the pointer to the buffer.
+/// The caller must ensure that the pointer is valid.
 #[no_mangle]
-pub unsafe extern "C" fn free_cache_read_buffer(buffer: *mut u8) {
+pub unsafe extern "C" fn cache_free(buffer: *mut u8) {
     // If the buffer is not null, drop the Vec
     if !buffer.is_null() {
         drop(Vec::from_raw_parts(buffer, 0, 0))
@@ -1103,6 +1087,17 @@ pub unsafe extern "C" fn cache_write(cache_ptr: *mut Cache, archive: u32) {}
 #[no_mangle]
 pub unsafe extern "C" fn cache_remove(cache_ptr: *mut Cache, archive: u32) {}
 
+/// Close a cache
+///
+/// # Arguments
+///
+/// * `cache_ptr` - The cache to close
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences the pointer to the cache.
+/// The caller must ensure that the pointer is valid.
+/// The caller must also ensure that the cache is not used after it has been closed.
 #[no_mangle]
 pub unsafe extern "C" fn cache_close(cache_ptr: *mut Cache) {
     // If the pointer to the cache is not null, drop the box
@@ -1122,4 +1117,10 @@ mod tests {
 
         assert_eq!(hashed_value, assert_val as u32);
     }
+
+    /*#[test]
+    fn party_hat_test() {
+        let cache = Cache::open("data/cache").unwrap();
+        fs::write("blue_partyhat.dat", cache.read(2, 10, 1042, None));
+    }*/
 }
