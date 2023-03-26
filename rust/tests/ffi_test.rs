@@ -1,38 +1,20 @@
 pub use rs2cache::cache_read;
-use rs2cache::Cache;
-use std::{ptr, slice};
+use rs2cache::{cache_read_named_group, Cache};
+use std::{ffi::CString, ptr, slice};
 use tracing::trace;
 
 mod common;
 
 #[test]
-fn test_cache_open() {
-    // Simply perform the setup as that is the same
-    // Change this if the setup changes
-    //assert!(!common::setup().is_null())
+fn test_cache_read_2() {
+    let cache = Cache::open("tests/data/cache/cache-read").unwrap();
+    let buf = cache.read(0, 0, 0, None);
+    assert_eq!(buf, [0x4f, 0x70, 0x65, 0x6e, 0x52, 0x53, 0x32])
 }
+
+// TODO: Make a test with gzip compressed data. I think the version thing may be fucked up on there in Js5Compression
 
 /*#[test]
-fn test_cache_read_diskstore_single_block() {
-    println!("here1");
-    let cache = Cache::open("data/cache").unwrap();
-    println!("here2");
-
-    let buf = cache.read(2, 10, 1042, None);
-    assert_eq!(
-        buf,
-        [
-            0x01, 0x0a, 0x4b, 0x07, 0x00, 0x01, 0x08, 0x00, 0x01, 0x04, 0x01, 0xb8, 0x06, 0x07,
-            0x3c, 0x05, 0x00, 0x4c, 0x24, 0x57, 0x65, 0x61, 0x72, 0x00, 0x0d, 0x00, 0x17, 0x00,
-            0xbb, 0x00, 0x19, 0x01, 0x6b, 0x00, 0x5a, 0x00, 0x1d, 0x5b, 0x00, 0x57, 0x4b, 0x00,
-            0x38, 0x41, 0x28, 0x01, 0x03, 0x9e, 0xab, 0xc0, 0x02, 0x42, 0x6c, 0x75, 0x65, 0x20,
-            0x70, 0x61, 0x72, 0x74, 0x79, 0x68, 0x61, 0x74, 0x00, 0x61, 0x04, 0x13, 0x94, 0x38,
-            0x35, 0x00
-        ]
-    )
-}
-
-#[test]
 fn test_huffman() {
     let cache = Cache::open("data/cache").unwrap();
 
@@ -63,37 +45,110 @@ fn test_huffman() {
     )
 }*/
 
-/*#[test]
-fn test_cache_read() {
-    // Open the cache
-    let cache_ptr = common::setup();
+#[test]
+fn test_cache_open() {
+    let cache_str = CString::new("tests/data/cache/cache-read").unwrap();
+    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
     assert!(!cache_ptr.is_null());
+}
 
-    // Test reading blue partyhat (id 1042)
-    // Create output length
+#[test]
+fn test_cache_read() {
+    let cache_str = CString::new("tests/data/cache/cache-read").unwrap();
+    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+
     let mut out_len = 0;
     let out_len_ptr: *mut u32 = &mut out_len;
 
-    assert!(true);
+    let buf = unsafe { cache_read(cache_ptr, 0, 0, 0, ptr::null(), out_len_ptr) };
 
-    // Read from the cache
-    /*let buf = unsafe { cache_read(cache_ptr, 2, 10, 1042, ptr::null(), out_len_ptr) };
-
-    // Convert the output to a slice
     let buf_data = unsafe { slice::from_raw_parts(buf, out_len as usize) };
 
-    // Write out the output
-    trace!("Output of buf_data: {:#04x?}", buf_data);
+    assert_eq!(buf_data, "OpenRS2".as_bytes())
+}
 
-    assert_eq!(
-        buf_data,
-        [
-            0x01, 0x0a, 0x4b, 0x07, 0x00, 0x01, 0x08, 0x00, 0x01, 0x04, 0x01, 0xb8, 0x06, 0x07,
-            0x3c, 0x05, 0x00, 0x4c, 0x24, 0x57, 0x65, 0x61, 0x72, 0x00, 0x0d, 0x00, 0x17, 0x00,
-            0xbb, 0x00, 0x19, 0x01, 0x6b, 0x00, 0x5a, 0x00, 0x1d, 0x5b, 0x00, 0x57, 0x4b, 0x00,
-            0x38, 0x41, 0x28, 0x01, 0x03, 0x9e, 0xab, 0xc0, 0x02, 0x42, 0x6c, 0x75, 0x65, 0x20,
-            0x70, 0x61, 0x72, 0x74, 0x79, 0x68, 0x61, 0x74, 0x00, 0x61, 0x04, 0x13, 0x94, 0x38,
-            0x35, 0x00
-        ]
-    )*/
+#[test]
+fn test_cache_read_encrypted() {
+    let cache_str = CString::new("tests/data/cache/cache-read-encrypted").unwrap();
+    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    assert!(!cache_ptr.is_null());
+
+    let mut out_len = 0;
+    let out_len_ptr: *mut u32 = &mut out_len;
+
+    let buf = unsafe { cache_read(cache_ptr, 0, 0, 0, &KEY as *const [u32; 4], out_len_ptr) };
+
+    let buf_data = unsafe { slice::from_raw_parts(buf, out_len as usize) };
+
+    assert_eq!(buf_data, "OpenRS2".as_bytes())
+}
+
+#[test]
+fn test_cache_read_named_group() {
+    let cache_str = CString::new("tests/data/cache/cache-read-named-group").unwrap();
+    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+
+    let mut out_len = 0;
+    let out_len_ptr: *mut u32 = &mut out_len;
+
+    let group_str = CString::new("OpenRS2").unwrap();
+
+    let buf = unsafe {
+        cache_read_named_group(
+            cache_ptr,
+            0,
+            group_str.as_ptr(),
+            0,
+            ptr::null(),
+            out_len_ptr,
+        )
+    };
+
+    let buf_data = unsafe { slice::from_raw_parts(buf, out_len as usize) };
+
+    assert_eq!(buf_data, "OpenRS2".as_bytes())
+}
+
+#[test]
+fn test_cache_read_named_group_encrypted() {
+    let cache_str = CString::new("tests/data/cache/cache-read-named-group-encrypted").unwrap();
+    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+
+    let mut out_len = 0;
+    let out_len_ptr: *mut u32 = &mut out_len;
+
+    let group_str = CString::new("OpenRS2").unwrap();
+
+    let buf = unsafe {
+        cache_read_named_group(
+            cache_ptr,
+            0,
+            group_str.as_ptr(),
+            0,
+            &KEY as *const [u32; 4],
+            out_len_ptr,
+        )
+    };
+
+    let buf_data = unsafe { slice::from_raw_parts(buf, out_len as usize) };
+
+    assert_eq!(buf_data, "OpenRS2".as_bytes())
+}
+
+const KEY: [u32; 4] = [0x00112233, 0x44556677, 0x8899AABB, 0xCCDDEEFF];
+
+/*#[test]
+fn test_cache_read_bzip2() {
+    let cache_str = CString::new("tests/data/cache/cache-read-bzip2").unwrap();
+    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    assert!(!cache_ptr.is_null());
+
+    let mut out_len = 0;
+    let out_len_ptr: *mut u32 = &mut out_len;
+
+    let buf = unsafe { cache_read(cache_ptr, 0, 0, 0, ptr::null(), out_len_ptr) };
+
+    let buf_data = unsafe { slice::from_raw_parts(buf, out_len as usize) };
+
+    assert_eq!(buf_data, [0x4f, 0x70, 0x65, 0x6e, 0x52, 0x53, 0x32])
 }*/

@@ -211,7 +211,7 @@ impl Js5Compression {
                 return decipher(input_ref, &xtea_keys);
             }
 
-            return input_ref.to_vec();
+            return input_ref[..len as usize].to_vec();
         }
 
         let len_with_uncompressed_len = len + 4;
@@ -233,10 +233,17 @@ impl Js5Compression {
 
         plain_text_csr.read_exact(&mut plain_text).unwrap();
 
+        // Skip version by using len
+        let input_stream = &plain_text[..len as usize];
+
+        println!("Buf3: {:?}", input_stream);
+
         match type_id {
-            COMPRESSION_TYPE_BZIP => decompress_archive_bzip2(plain_text, uncompressed_len as u32),
-            COMPRESSION_TYPE_GZIP => decompress_archive_gzip(plain_text, uncompressed_len as u32),
-            COMPRESSION_TYPE_LZMA => decompress_archive_lzma(plain_text, uncompressed_len as u32),
+            COMPRESSION_TYPE_BZIP => {
+                decompress_archive_bzip2(input_stream, uncompressed_len as u32)
+            }
+            COMPRESSION_TYPE_GZIP => decompress_archive_gzip(input_stream, uncompressed_len as u32),
+            COMPRESSION_TYPE_LZMA => decompress_archive_lzma(input_stream, uncompressed_len as u32),
             _ => panic!("Unknown compression type {}", type_id),
         }
     }
@@ -322,7 +329,9 @@ impl Store for DiskStore {
         let mut buf = Vec::with_capacity(entry.size as usize);
         let data = self.get_data(archive);
 
-        let extended = group as u32 >= 65536;
+        println!("entry size: {}", entry.size);
+
+        let extended = group >= 65536;
         let header_size = if extended {
             EXTENDED_BLOCK_HEADER_SIZE
         } else {
@@ -371,14 +380,16 @@ impl Store for DiskStore {
             }
 
             // read data
-            let bytes_to_read = cmp::min(entry.size as usize - buf.len(), data_size);
-            buf.extend_from_slice(&data[pos + header_size..pos + header_size + bytes_to_read]);
+            let len = cmp::min(entry.size as usize - buf.len(), data_size);
+            println!("Bytes to read: {}", len);
+            buf.extend_from_slice(&data[pos + header_size..pos + header_size + len]);
 
             // advance to next block
             block = next_block;
             num += 1;
         }
 
+        println!("Buf1: {:?}", buf);
         buf
     }
 }
@@ -694,9 +705,13 @@ impl Archive for CacheArchive {
 
         let compressed = self.read_packed(entry_id, &store);
 
+        println!("Buf2: {:?}", compressed);
+
         self.verify_compressed(&compressed, entry);
 
         let buf = Js5Compression::uncompress(compressed, key);
+
+        println!("Buf4: {:?}", buf);
 
         self.verify_uncompressed(&buf, entry);
 
@@ -778,8 +793,6 @@ struct Js5Index {
 
 impl Js5Index {
     fn read<T: AsRef<[u8]>>(buf: T) -> Js5Index {
-        trace!("Length of buffer: {}", buf.as_ref().len());
-
         let mut buf_ref = buf.as_ref();
 
         let protocol = buf_ref.read_u8().unwrap();
@@ -930,8 +943,12 @@ impl Js5Index {
 
 impl Cache {
     pub fn open(input_path: &str) -> io::Result<Cache> {
+        Self::open_with_store(store_open(input_path))
+    }
+
+    pub fn open_with_store(store: Box<dyn Store>) -> io::Result<Cache> {
         let mut cache = Self {
-            store: store_open(input_path),
+            store,
             archives: HashMap::new(),
             unpacked_cache_size: UNPACKED_CACHE_SIZE_DEFAULT,
         };
@@ -974,7 +991,7 @@ impl Cache {
         self.archives[&archive].read(group, file, xtea_keys, &self.store)
     }
 
-    pub fn read_named(
+    pub fn read_named_group(
         &self,
         archive: u8,
         group: &str,
@@ -1032,6 +1049,40 @@ pub unsafe extern "C" fn cache_read(
 
     // Call the read function
     let mut buf = cache.read(archive, group, file, xtea_keys);
+
+    let data = buf.as_mut_ptr();
+    *out_len = buf.len() as u32;
+    mem::forget(buf);
+    data
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cache_read_named_group(
+    // Pointer to the cache
+    cache_ptr: *mut Cache,
+    // Archive id
+    archive: u8,
+    // Group id
+    group: *const c_char,
+    // File id
+    file: u16,
+    xtea_keys_arg: *const [u32; 4],
+    // Output length
+    out_len: *mut u32,
+) -> *mut u8 {
+    // Dereference the cache
+    let cache = &*cache_ptr;
+
+    // Dereference the xtea keys if not null
+    let mut xtea_keys = None;
+    if !xtea_keys_arg.is_null() {
+        xtea_keys = Some(*xtea_keys_arg);
+    }
+
+    let group_str = CStr::from_ptr(group).to_str().unwrap();
+
+    // Call the read function
+    let mut buf = cache.read_named_group(archive, group_str, file, xtea_keys);
 
     let data = buf.as_mut_ptr();
     *out_len = buf.len() as u32;
