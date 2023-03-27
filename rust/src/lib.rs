@@ -823,7 +823,6 @@ impl Js5Index {
 
         trace!("has_digests: {}", index.has_digests);
 
-        // TODO: Digests
         if index.has_digests {
             for (id, group) in &mut index.groups {
                 let digest_bits = 512;
