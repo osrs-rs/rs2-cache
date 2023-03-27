@@ -1,6 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
-
 use rs2cache::{Group, Js5IndexFile};
+use std::collections::BTreeMap;
 
 #[test]
 fn test_unpack_single() {

@@ -2,8 +2,6 @@ pub use rs2cache::cache_read;
 use rs2cache::{cache_read_named_group, Cache};
 use std::{ffi::CString, ptr, slice};
 
-mod common;
-
 #[test]
 fn test_cache_open() {
     let cache_str = CString::new("tests/data/cache/cache-read").unwrap();

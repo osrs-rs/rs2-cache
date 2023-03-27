@@ -44,7 +44,7 @@ const ARCHIVESET: usize = (1 << 24) - 1;
 ///
 /// The djb2 hash function is a simple and efficient hash function that produces
 /// good hash values for short strings.
-fn djb2_hash<T: AsRef<str>>(string: T) -> u32 {
+pub fn djb2_hash<T: AsRef<str>>(string: T) -> u32 {
     // Convert the string to a byte slice.
     let string = string.as_ref().as_bytes();
 
@@ -690,7 +690,7 @@ pub struct Cache {
     unpacked_cache_size: usize,
 }
 
-enum Js5Protocol {
+pub enum Js5Protocol {
     Original = 5,
     Versioned = 6,
     Smart = 7,
@@ -703,44 +703,45 @@ enum Js5IndexFlags {
     FlagUncompressedChecksums = 0x8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Js5IndexFile {
     pub name_hash: i32,
 }
 
-#[derive(Debug)]
-struct Js5IndexEntry {
-    name_hash: i32,
-    version: u32,
-    checksum: u32,
-    uncompressed_checksum: u32,
-    length: u32,
-    uncompressed_length: u32,
-    digest: Option<bool>,
-    capacity: u32,
-    files: BTreeMap<u32, Js5IndexFile>,
+#[derive(Debug, PartialEq)]
+pub struct Js5IndexEntry {
+    pub name_hash: i32,
+    pub version: u32,
+    pub checksum: u32,
+    pub uncompressed_checksum: u32,
+    pub length: u32,
+    pub uncompressed_length: u32,
+    pub digest: Vec<u8>,
+    pub capacity: u32,
+    pub files: BTreeMap<u32, Js5IndexFile>,
 }
 
-struct Js5Index {
-    protocol: u8,
-    version: i32,
-    has_names: bool,
-    has_digests: bool,
-    has_lengths: bool,
-    has_uncompressed_checksums: bool,
-    groups: BTreeMap<u32, Js5IndexEntry>,
-    name_hash_table: HashMap<u32, u32>,
+#[derive(Debug, PartialEq)]
+pub struct Js5Index {
+    pub protocol: u8,
+    pub version: i32,
+    pub has_names: bool,
+    pub has_digests: bool,
+    pub has_lengths: bool,
+    pub has_uncompressed_checksums: bool,
+    pub groups: BTreeMap<u32, Js5IndexEntry>,
+    pub name_hash_table: HashMap<u32, u32>,
 }
 
 impl Js5Index {
-    fn read<T: AsRef<[u8]>>(buf: T) -> Js5Index {
+    pub fn read<T: AsRef<[u8]>>(buf: T) -> Js5Index {
         let mut buf_ref = buf.as_ref();
 
         let protocol = buf_ref.read_u8().unwrap();
 
         let read_func = if protocol >= Js5Protocol::Smart as u8 {
             // TODO: Read Smart
-            |v: &mut &[u8]| -> u32 { todo!() }
+            |v: &mut &[u8]| -> u32 { v.read_u32_smart().unwrap() }
         } else {
             |v: &mut &[u8]| -> u32 { v.read_u16().unwrap() as u32 }
         };
@@ -787,7 +788,7 @@ impl Js5Index {
                     uncompressed_checksum: 0,
                     length: 0,
                     uncompressed_length: 0,
-                    digest: None,
+                    digest: Vec::new(),
                     capacity: 0,
                     files: BTreeMap::new(),
                 },
@@ -824,9 +825,13 @@ impl Js5Index {
 
         // TODO: Digests
         if index.has_digests {
-            todo!("Digests");
-            //for group in &mut index.entries {
-            //}
+            for (id, group) in &mut index.groups {
+                let digest_bits = 512;
+                let digest_bytes = digest_bits >> 3;
+                let mut digest = vec![0; digest_bytes];
+                buf_ref.read_exact(&mut digest).unwrap();
+                group.digest.extend(&digest);
+            }
         }
 
         trace!("has_lengths: {}", index.has_lengths);
