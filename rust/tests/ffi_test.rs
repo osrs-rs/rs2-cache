@@ -13,6 +13,7 @@ fn test_cache_open() {
 fn test_cache_read() {
     let cache_str = CString::new("tests/data/cache/cache-read").unwrap();
     let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    assert!(!cache_ptr.is_null());
 
     let mut out_len = 0;
     let out_len_ptr: *mut u32 = &mut out_len;
@@ -44,6 +45,7 @@ fn test_cache_read_encrypted() {
 fn test_cache_read_named_group() {
     let cache_str = CString::new("tests/data/cache/cache-read-named-group").unwrap();
     let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    assert!(!cache_ptr.is_null());
 
     let mut out_len = 0;
     let out_len_ptr: *mut u32 = &mut out_len;
@@ -70,6 +72,7 @@ fn test_cache_read_named_group() {
 fn test_cache_read_named_group_encrypted() {
     let cache_str = CString::new("tests/data/cache/cache-read-named-group-encrypted").unwrap();
     let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    assert!(!cache_ptr.is_null());
 
     let mut out_len = 0;
     let out_len_ptr: *mut u32 = &mut out_len;
