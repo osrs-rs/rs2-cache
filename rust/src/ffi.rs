@@ -65,7 +65,7 @@ pub unsafe extern "C" fn cache_read(
     out_len: *mut u32,
 ) -> *mut u8 {
     // Dereference the cache
-    let cache = &*cache_ptr;
+    let cache = &mut *cache_ptr;
 
     // Dereference the xtea keys if not null
     let mut xtea_keys = None;
@@ -111,7 +111,7 @@ pub unsafe extern "C" fn cache_read_named_group(
     out_len: *mut u32,
 ) -> *mut u8 {
     // Dereference the cache
-    let cache = &*cache_ptr;
+    let cache = &mut *cache_ptr;
 
     // Dereference the xtea keys if not null
     let mut xtea_keys = None;

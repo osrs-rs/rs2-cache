@@ -6,26 +6,25 @@ pub mod cache_archive;
 pub trait Archive {
     fn is_dirty(&self) -> bool;
     fn read(
-        &self,
+        &mut self,
         group: u32,
         file: u16,
         xtea_keys: Option<[u32; 4]>,
         store: &dyn Store,
     ) -> Vec<u8>;
     fn read_named_group(
-        &self,
+        &mut self,
         group: u32,
         file: u16,
         xtea_keys: Option<[u32; 4]>,
         store: &dyn Store,
     ) -> Vec<u8>;
     fn get_unpacked(
-        &self,
-        entry: &Js5IndexEntry,
+        &mut self,
         entry_id: u32,
         key: Option<[u32; 4]>,
         store: &dyn Store,
-    ) -> Unpacked;
+    ) -> &Unpacked;
     fn read_packed(&self, group: u32, store: &dyn Store) -> Vec<u8>;
     fn verify_compressed(&self, buf: &[u8], entry: &Js5IndexEntry);
     fn verify_uncompressed(&self, buf: &[u8], entry: &Js5IndexEntry);

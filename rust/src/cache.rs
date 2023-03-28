@@ -68,18 +68,27 @@ impl Cache {
     /// * `group` - The group to read from
     /// * `file` - The file to read
     /// * `xtea_keys` - The XTEA keys to use for decryption. If None, the file will not be decrypted
-    pub fn read(&self, archive: u8, group: u32, file: u16, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
-        self.archives[&archive].read(group, file, xtea_keys, self.store.as_ref())
+    pub fn read(
+        &mut self,
+        archive: u8,
+        group: u32,
+        file: u16,
+        xtea_keys: Option<[u32; 4]>,
+    ) -> Vec<u8> {
+        self.archives
+            .get_mut(&archive)
+            .unwrap()
+            .read(group, file, xtea_keys, self.store.as_ref())
     }
 
     pub fn read_named_group(
-        &self,
+        &mut self,
         archive: u8,
         group: &str,
         file: u16,
         xtea_keys: Option<[u32; 4]>,
     ) -> Vec<u8> {
-        self.archives[&archive].read_named_group(
+        self.archives.get_mut(&archive).unwrap().read_named_group(
             djb2_hash(group),
             file,
             xtea_keys,

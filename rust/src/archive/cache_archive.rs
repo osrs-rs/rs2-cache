@@ -11,7 +11,7 @@ pub struct CacheArchive {
     pub is_dirty: bool,
     pub index: Js5Index,
     pub archive: u8,
-    pub unpacked_cache: HashMap<u64, Unpacked>,
+    pub unpacked_cache: HashMap<u32, Unpacked>,
 }
 
 impl CacheArchive {
@@ -23,34 +23,36 @@ impl Archive for CacheArchive {
         self.is_dirty
     }
 
-    fn read(&self, group: u32, file: u16, key: Option<[u32; 4]>, store: &dyn Store) -> Vec<u8> {
-        let entry = self.index.groups.get(&group).unwrap();
-        let unpacked = self.get_unpacked(entry, group, key, store);
+    fn read(&mut self, group: u32, file: u16, key: Option<[u32; 4]>, store: &dyn Store) -> Vec<u8> {
+        let unpacked = match self.unpacked_cache.get(&group) {
+            Some(unpacked) => unpacked,
+            None => self.get_unpacked(group, key, store),
+        };
         unpacked.read(file as u32)
     }
 
     fn read_named_group(
-        &self,
+        &mut self,
         group_name_hash: u32,
         file: u16,
         key: Option<[u32; 4]>,
         store: &dyn Store,
     ) -> Vec<u8> {
         let entry_id = self.index.get_named(group_name_hash).unwrap();
-        let entry = self.index.groups.get(&entry_id).unwrap();
-
-        let unpacked = self.get_unpacked(entry, entry_id, key, store);
+        let unpacked = match self.unpacked_cache.get(&entry_id) {
+            Some(unpacked) => unpacked,
+            None => self.get_unpacked(entry_id, key, store),
+        };
         unpacked.read(file as u32)
     }
 
     fn get_unpacked(
-        &self,
-        entry: &Js5IndexEntry,
+        &mut self,
         entry_id: u32,
         key: Option<[u32; 4]>,
         store: &dyn Store,
-    ) -> Unpacked {
-        // TODO: Handle unpacked cache aka cached version of the unpacked files
+    ) -> &Unpacked {
+        let entry = self.index.groups.get(&entry_id).unwrap();
 
         let compressed = self.read_packed(entry_id, store);
 
@@ -62,11 +64,11 @@ impl Archive for CacheArchive {
 
         let files = Group::unpack(buf, &self.index.groups.get(&entry_id).unwrap().files);
 
-        Unpacked {
+        self.unpacked_cache.entry(entry_id).or_insert(Unpacked {
             _dirty: false,
             _key: key,
             files,
-        }
+        })
     }
 
     fn read_packed(&self, group: u32, store: &dyn Store) -> Vec<u8> {
