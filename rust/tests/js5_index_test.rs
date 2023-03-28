@@ -1,5 +1,8 @@
 use memmap2::Mmap;
-use rs2cache::{djb2_hash, Js5Index, Js5IndexEntry, Js5IndexFile, Js5Protocol};
+use rs2cache::{
+    djb2::djb2_hash,
+    js5_index::{Js5Index, Js5IndexEntry, Js5IndexFile, Js5Protocol},
+};
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,

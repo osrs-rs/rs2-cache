@@ -1,5 +1,6 @@
-use rs2cache::{DiskStore, Store};
 use std::path::Path;
+
+use rs2cache::store::{disk_store::DiskStore, Store};
 
 #[test]
 fn test_list_groups() {

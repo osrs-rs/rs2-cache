@@ -1,4 +1,4 @@
-use rs2cache::{Group, Js5IndexFile};
+use rs2cache::{group::Group, js5_index::Js5IndexFile};
 use std::collections::BTreeMap;
 
 #[test]

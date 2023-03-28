@@ -1,18 +1,17 @@
-pub use rs2cache::cache_read;
-use rs2cache::cache_read_named_group;
+use rs2cache::ffi::{cache_open, cache_read, cache_read_named_group};
 use std::{ffi::CString, ptr, slice};
 
 #[test]
 fn test_cache_open() {
     let cache_str = CString::new("tests/data/cache/cache-read").unwrap();
-    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    let cache_ptr = unsafe { cache_open(cache_str.as_ptr()) };
     assert!(!cache_ptr.is_null());
 }
 
 #[test]
 fn test_cache_read() {
     let cache_str = CString::new("tests/data/cache/cache-read").unwrap();
-    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    let cache_ptr = unsafe { cache_open(cache_str.as_ptr()) };
     assert!(!cache_ptr.is_null());
 
     let mut out_len = 0;
@@ -28,7 +27,7 @@ fn test_cache_read() {
 #[test]
 fn test_cache_read_encrypted() {
     let cache_str = CString::new("tests/data/cache/cache-read-encrypted").unwrap();
-    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    let cache_ptr = unsafe { cache_open(cache_str.as_ptr()) };
     assert!(!cache_ptr.is_null());
 
     let mut out_len = 0;
@@ -44,7 +43,7 @@ fn test_cache_read_encrypted() {
 #[test]
 fn test_cache_read_named_group() {
     let cache_str = CString::new("tests/data/cache/cache-read-named-group").unwrap();
-    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    let cache_ptr = unsafe { cache_open(cache_str.as_ptr()) };
     assert!(!cache_ptr.is_null());
 
     let mut out_len = 0;
@@ -71,7 +70,7 @@ fn test_cache_read_named_group() {
 #[test]
 fn test_cache_read_named_group_encrypted() {
     let cache_str = CString::new("tests/data/cache/cache-read-named-group-encrypted").unwrap();
-    let cache_ptr = unsafe { rs2cache::cache_open(cache_str.as_ptr()) };
+    let cache_ptr = unsafe { cache_open(cache_str.as_ptr()) };
     assert!(!cache_ptr.is_null());
 
     let mut out_len = 0;

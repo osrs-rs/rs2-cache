@@ -1,5 +1,5 @@
 use memmap2::Mmap;
-use rs2cache::Js5Compression;
+use rs2cache::js5_compression::Js5Compression;
 use std::{fs::File, path::Path};
 
 #[test]
