@@ -1,5 +1,5 @@
 pub use rs2cache::cache_read;
-use rs2cache::{cache_read_named_group, Cache};
+use rs2cache::cache_read_named_group;
 use std::{ffi::CString, ptr, slice};
 
 #[test]

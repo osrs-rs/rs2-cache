@@ -15,7 +15,6 @@ use std::{
     path::Path,
 };
 use thiserror::Error;
-use tracing::trace;
 
 const EXTENDED_BLOCK_HEADER_SIZE: usize = 10;
 const BLOCK_HEADER_SIZE: usize = 8;
@@ -189,7 +188,7 @@ impl Js5Compression {
 
         let len = input_ref.read_i32().unwrap();
         if len < 0 {
-            panic!("Length is negative {}", len);
+            panic!("Length is negative {len}");
         }
 
         if type_id == COMPRESSION_TYPE_NONE {
@@ -214,7 +213,7 @@ impl Js5Compression {
 
         let uncompressed_len = plain_text_csr.read_i32().unwrap();
         if uncompressed_len < 0 {
-            panic!("Uncompressed length is negative: {}", uncompressed_len);
+            panic!("Uncompressed length is negative: {uncompressed_len}");
         }
 
         // Copy bytes from the cursor to a buffer skipping over already read ones
@@ -226,21 +225,19 @@ impl Js5Compression {
         // Skip version by using len
         let input_stream = &plain_text[..len as usize];
 
-        println!("Buf3: {:?}", input_stream);
-
         match type_id {
             COMPRESSION_TYPE_BZIP => {
                 decompress_archive_bzip2(input_stream, uncompressed_len as u32)
             }
             COMPRESSION_TYPE_GZIP => decompress_archive_gzip(input_stream, uncompressed_len as u32),
             COMPRESSION_TYPE_LZMA => decompress_archive_lzma(input_stream, uncompressed_len as u32),
-            _ => panic!("Unknown compression type {}", type_id),
+            _ => panic!("Unknown compression type {type_id}"),
         }
     }
 
     fn decrypt<T: AsRef<[u8]>>(input: T, len: i32, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
         if let Some(xtea_keys) = xtea_keys {
-            decipher(&input.as_ref(), &xtea_keys)
+            decipher(input.as_ref(), &xtea_keys)
         } else {
             input.as_ref().to_vec()[..len as usize].to_vec()
         }
@@ -305,7 +302,6 @@ impl Store for DiskStore {
             group += 1;
         }
 
-        trace!("list archive {} -> {:?}", archive, groups);
         groups
     }
 
@@ -317,8 +313,6 @@ impl Store for DiskStore {
 
         let mut buf = Vec::with_capacity(entry.size as usize);
         let data = self.get_data(archive);
-
-        println!("entry size: {}", entry.size);
 
         let extended = group >= 65536;
         let header_size = if extended {
@@ -355,22 +349,20 @@ impl Store for DiskStore {
             };
             let actual_num = data_csr.read_u16().unwrap();
             let next_block = data_csr.read_u24().unwrap();
-            let actual_archive =
-                (data_csr.read_u8().unwrap() - (if self.legacy { 1 } else { 0 })) & 0xFF;
+            let actual_archive = data_csr.read_u8().unwrap() - (if self.legacy { 1 } else { 0 });
 
-            if actual_group != group as u32 {
-                panic!("Expecting group {}, was {}", group, actual_group);
+            if actual_group != group {
+                panic!("Expecting group {group}, was {actual_group}");
             }
             if actual_num != num {
-                panic!("Expecting block number {}, was {}", num, actual_num);
+                panic!("Expecting block number {num}, was {actual_num}");
             }
             if actual_archive != archive {
-                panic!("Expecting archive {}, was {}", archive, actual_archive);
+                panic!("Expecting archive {archive}, was {actual_archive}");
             }
 
             // read data
             let len = cmp::min(entry.size as usize - buf.len(), data_size);
-            println!("Bytes to read: {}", len);
             buf.extend_from_slice(&data[pos + header_size..pos + header_size + len]);
 
             // advance to next block
@@ -378,7 +370,6 @@ impl Store for DiskStore {
             num += 1;
         }
 
-        println!("Buf1: {:?}", buf);
         buf
     }
 }
@@ -418,7 +409,7 @@ impl DiskStore {
 
         let mut archives = HashMap::new();
         for i in 0..MAX_ARCHIVE + 1 {
-            let path = Path::new(path.as_ref()).join(format!("{}{}", INDEX_PATH, i));
+            let path = Path::new(path.as_ref()).join(format!("{INDEX_PATH}{i}"));
             if Path::new(&path).exists() {
                 let index = unsafe { Mmap::map(&File::open(&path).unwrap()).unwrap() };
                 archives.insert(i, index);
@@ -467,25 +458,25 @@ trait Archive {
         group: u32,
         file: u16,
         xtea_keys: Option<[u32; 4]>,
-        store: &Box<dyn Store>,
+        store: &dyn Store,
     ) -> Vec<u8>;
     fn read_named_group(
         &self,
         group: u32,
         file: u16,
         xtea_keys: Option<[u32; 4]>,
-        store: &Box<dyn Store>,
+        store: &dyn Store,
     ) -> Vec<u8>;
     fn get_unpacked(
         &self,
         entry: &Js5IndexEntry,
         entry_id: u32,
         key: Option<[u32; 4]>,
-        store: &Box<dyn Store>,
+        store: &dyn Store,
     ) -> Unpacked;
-    fn read_packed(&self, group: u32, store: &Box<dyn Store>) -> Vec<u8>;
-    fn verify_compressed(&self, buf: &Vec<u8>, entry: &Js5IndexEntry);
-    fn verify_uncompressed(&self, buf: &Vec<u8>, entry: &Js5IndexEntry);
+    fn read_packed(&self, group: u32, store: &dyn Store) -> Vec<u8>;
+    fn verify_compressed(&self, buf: &[u8], entry: &Js5IndexEntry);
+    fn verify_uncompressed(&self, buf: &[u8], entry: &Js5IndexEntry);
 }
 
 pub struct Group {}
@@ -495,8 +486,6 @@ impl Group {
         if group.is_empty() {
             panic!("Group has no files")
         }
-
-        println!("Input: {:?}", input);
 
         if group.len() == 1 {
             let single_entry = group.keys().next().unwrap();
@@ -509,19 +498,14 @@ impl Group {
 
         // Now begin going over the stripes
         let stripes = *input.last().unwrap();
-        println!("Stripes: {}", stripes);
 
         let mut data_index = input_reader.position() as i32;
-        let trailer_index = input.len() - (stripes as usize * group.len() * 4) as usize - 1;
-
-        println!("Trailer index: {}", trailer_index);
-
-        println!("STRIPES YO: {:?}", &input[trailer_index..]);
+        let trailer_index = input.len() - (stripes as usize * group.len() * 4) - 1;
 
         input_reader.set_position(trailer_index as u64);
 
         let mut lens = vec![0; group.len()];
-        for i in 0..stripes {
+        for _ in 0..stripes {
             let mut prev_len = 0;
             for j in lens.iter_mut() {
                 prev_len += input_reader.read_i32().unwrap();
@@ -532,18 +516,18 @@ impl Group {
         input_reader.set_position(trailer_index as u64);
 
         let mut files = BTreeMap::new();
-        for (i, (x, y)) in group.iter().enumerate() {
+        for (i, x) in group.keys().enumerate() {
             files.insert(*x, Vec::with_capacity(lens[i] as usize));
         }
 
         for _ in 0..stripes {
             let mut prev_len = 0;
-            for (i, (x, y)) in group.iter().enumerate() {
+            for x in group.keys() {
                 prev_len += input_reader.read_i32().unwrap();
-                let dst = files.get_mut(&(*x as u32)).unwrap();
+                let dst = files.get_mut(x).unwrap();
                 let cap = dst.capacity();
                 dst.extend_from_slice(
-                    &input[data_index as usize..(data_index + prev_len) as usize].to_vec(),
+                    &input[data_index as usize..(data_index + prev_len) as usize],
                 );
                 // Truncate to the correct length in case the buffer has
                 // too much data pushed into it.
@@ -593,7 +577,7 @@ struct Unpacked {
 
 impl Unpacked {
     pub fn read(&self, file: u32) -> Vec<u8> {
-        self.files.get(&(file as u32)).unwrap().to_vec()
+        self.files.get(&file).unwrap().to_vec()
     }
 }
 
@@ -602,14 +586,8 @@ impl Archive for CacheArchive {
         self.is_dirty
     }
 
-    fn read(
-        &self,
-        group: u32,
-        file: u16,
-        key: Option<[u32; 4]>,
-        store: &Box<dyn Store>,
-    ) -> Vec<u8> {
-        let entry = self.index.groups.get(&(group as u32)).unwrap();
+    fn read(&self, group: u32, file: u16, key: Option<[u32; 4]>, store: &dyn Store) -> Vec<u8> {
+        let entry = self.index.groups.get(&group).unwrap();
         let unpacked = self.get_unpacked(entry, group, key, store);
         unpacked.read(file as u32)
     }
@@ -619,13 +597,10 @@ impl Archive for CacheArchive {
         group_name_hash: u32,
         file: u16,
         key: Option<[u32; 4]>,
-        store: &Box<dyn Store>,
+        store: &dyn Store,
     ) -> Vec<u8> {
         let entry_id = self.index.get_named(group_name_hash).unwrap();
-        let entry = self.index.groups.get(&(entry_id as u32)).unwrap();
-
-        println!("entry1: {}", entry_id);
-        println!("entry: {:?}", entry);
+        let entry = self.index.groups.get(&entry_id).unwrap();
 
         let unpacked = self.get_unpacked(entry, entry_id, key, store);
         unpacked.read(file as u32)
@@ -636,47 +611,38 @@ impl Archive for CacheArchive {
         entry: &Js5IndexEntry,
         entry_id: u32,
         key: Option<[u32; 4]>,
-        store: &Box<dyn Store>,
+        store: &dyn Store,
     ) -> Unpacked {
-        trace!("get unpacked");
-        // TODO: Handle unpacked cache
+        // TODO: Handle unpacked cache aka cached version of the unpacked files
 
-        let compressed = self.read_packed(entry_id, &store);
-
-        println!("Buf2: {:?}", compressed);
+        let compressed = self.read_packed(entry_id, store);
 
         self.verify_compressed(&compressed, entry);
 
         let buf = Js5Compression::uncompress(compressed, key);
 
-        println!("Buf4: {:?}", buf);
-
         self.verify_uncompressed(&buf, entry);
 
-        let files = Group::unpack(
-            buf,
-            &self.index.groups.get(&(entry_id as u32)).unwrap().files,
-        );
+        let files = Group::unpack(buf, &self.index.groups.get(&entry_id).unwrap().files);
 
-        let unpacked = Unpacked {
+        //self.unpacked_cache.insert(123, unpacked);
+
+        Unpacked {
             dirty: false,
             key,
             files,
-        };
-        //self.unpacked_cache.insert(123, unpacked);
-
-        unpacked
+        }
     }
 
-    fn read_packed(&self, group: u32, store: &Box<dyn Store>) -> Vec<u8> {
+    fn read_packed(&self, group: u32, store: &dyn Store) -> Vec<u8> {
         store.read(self.archive, group)
     }
 
     // TODO: Implement
-    fn verify_compressed(&self, buf: &Vec<u8>, entry: &Js5IndexEntry) {}
+    fn verify_compressed(&self, buf: &[u8], entry: &Js5IndexEntry) {}
 
     // TODO: Implement
-    fn verify_uncompressed(&self, buf: &Vec<u8>, entry: &Js5IndexEntry) {}
+    fn verify_uncompressed(&self, buf: &[u8], entry: &Js5IndexEntry) {}
 }
 
 pub struct Cache {
@@ -697,10 +663,10 @@ pub enum Js5Protocol {
 }
 
 enum Js5IndexFlags {
-    FlagNames = 0x1,
-    FlagDigests = 0x2,
-    FlagLengths = 0x4,
-    FlagUncompressedChecksums = 0x8,
+    Names = 0x1,
+    Digests = 0x2,
+    Lengths = 0x4,
+    UncompressedChecksums = 0x8,
 }
 
 #[derive(Debug, PartialEq)]
@@ -740,7 +706,6 @@ impl Js5Index {
         let protocol = buf_ref.read_u8().unwrap();
 
         let read_func = if protocol >= Js5Protocol::Smart as u8 {
-            // TODO: Read Smart
             |v: &mut &[u8]| -> u32 { v.read_u32_smart().unwrap() }
         } else {
             |v: &mut &[u8]| -> u32 { v.read_u16().unwrap() as u32 }
@@ -754,26 +719,17 @@ impl Js5Index {
         let flags = buf_ref.read_u8().unwrap();
         let size = read_func(&mut buf_ref);
 
-        // Trace flags and size
-        trace!("JS5 Protocol: {}", protocol);
-        trace!("JS5 Version: {}", version);
-        trace!("JS5 Flags: {}", flags);
-        trace!("JS5 Size: {}", size);
-
         // Create Js5Index
         let mut index = Js5Index {
             protocol,
             version,
-            has_names: (flags & Js5IndexFlags::FlagNames as u8) != 0,
-            has_digests: (flags & Js5IndexFlags::FlagDigests as u8) != 0,
-            has_lengths: (flags & Js5IndexFlags::FlagLengths as u8) != 0,
-            has_uncompressed_checksums: (flags & Js5IndexFlags::FlagUncompressedChecksums as u8)
-                != 0,
+            has_names: (flags & Js5IndexFlags::Names as u8) != 0,
+            has_digests: (flags & Js5IndexFlags::Digests as u8) != 0,
+            has_lengths: (flags & Js5IndexFlags::Lengths as u8) != 0,
+            has_uncompressed_checksums: (flags & Js5IndexFlags::UncompressedChecksums as u8) != 0,
             groups: BTreeMap::new(),
             name_hash_table: HashMap::new(),
         };
-
-        trace!("Creating groups");
 
         // Begin creating the groups
         let mut prev_group_id = 0;
@@ -795,36 +751,25 @@ impl Js5Index {
             );
         });
 
-        trace!("has_names: {}", index.has_names);
-
         if index.has_names {
-            for (id, group) in &mut index.groups {
+            for (id, group) in index.groups.iter_mut() {
                 group.name_hash = buf_ref.read_i32().unwrap();
                 index.name_hash_table.insert(group.name_hash as u32, *id);
             }
         }
 
-        trace!("group checksum");
-
-        for (id, group) in &mut index.groups {
+        for group in index.groups.values_mut() {
             group.checksum = buf_ref.read_u32().unwrap();
         }
 
-        trace!(
-            "has_uncompressed_checksums: {}",
-            index.has_uncompressed_checksums
-        );
-
         if index.has_uncompressed_checksums {
-            for (id, group) in &mut index.groups {
+            for group in index.groups.values_mut() {
                 group.uncompressed_checksum = buf_ref.read_u32().unwrap();
             }
         }
 
-        trace!("has_digests: {}", index.has_digests);
-
         if index.has_digests {
-            for (id, group) in &mut index.groups {
+            for group in index.groups.values_mut() {
                 let digest_bits = 512;
                 let digest_bytes = digest_bits >> 3;
                 let mut digest = vec![0; digest_bytes];
@@ -833,28 +778,20 @@ impl Js5Index {
             }
         }
 
-        trace!("has_lengths: {}", index.has_lengths);
-
         if index.has_lengths {
-            for (id, group) in &mut index.groups {
+            for group in index.groups.values_mut() {
                 group.length = buf_ref.read_u32().unwrap();
                 group.uncompressed_length = buf_ref.read_u32().unwrap();
             }
         }
 
-        trace!("group_version");
-
-        for (id, group) in &mut index.groups {
+        for group in index.groups.values_mut() {
             group.version = buf_ref.read_u32().unwrap();
         }
 
         let group_sizes: Vec<u32> = (0..size).map(|_| read_func(&mut buf_ref)).collect();
 
-        trace!("group_sizes: {}", group_sizes.len());
-
-        trace!("Trace1, size: {}", buf_ref.len());
-
-        for (i, (id, group)) in index.groups.iter_mut().enumerate() {
+        for (i, group) in index.groups.values_mut().enumerate() {
             let group_size = group_sizes[i];
 
             let mut prev_file_id = 0;
@@ -866,17 +803,13 @@ impl Js5Index {
             });
         }
 
-        trace!("Trace9");
-
         if index.has_names {
-            for (id, group) in &mut index.groups {
-                for (file_id, file) in &mut group.files {
+            for group in index.groups.values_mut() {
+                for file in group.files.values_mut() {
                     file.name_hash = buf_ref.read_i32().unwrap();
                 }
             }
         }
-
-        trace!("Trace10");
 
         index
     }
@@ -905,11 +838,9 @@ impl Cache {
 
     fn init(&mut self) {
         for archive in self.store.list(ARCHIVESET as u8) {
-            //trace!("Loading archive {}", archive);
             let compressed = self.store.read(ARCHIVESET as u8, archive);
 
             let buf = Js5Compression::uncompress(compressed, None);
-            trace!("Uncompressed archive {} to {} bytes", archive, buf.len());
 
             let js5_index = Js5Index::read(buf);
 
@@ -933,7 +864,7 @@ impl Cache {
     /// * `file` - The file to read
     /// * `xtea_keys` - The XTEA keys to use for decryption. If None, the file will not be decrypted
     pub fn read(&self, archive: u8, group: u32, file: u16, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
-        self.archives[&archive].read(group, file, xtea_keys, &self.store)
+        self.archives[&archive].read(group, file, xtea_keys, self.store.as_ref())
     }
 
     pub fn read_named_group(
@@ -943,14 +874,20 @@ impl Cache {
         file: u16,
         xtea_keys: Option<[u32; 4]>,
     ) -> Vec<u8> {
-        self.archives[&archive].read_named_group(djb2_hash(group), file, xtea_keys, &self.store)
+        self.archives[&archive].read_named_group(
+            djb2_hash(group),
+            file,
+            xtea_keys,
+            self.store.as_ref(),
+        )
     }
 }
-
+/*
 #[no_mangle]
 pub unsafe extern "C" fn cache_create(cache_ptr: *mut Cache, archive: u32) {}
 #[no_mangle]
 pub unsafe extern "C" fn cache_capacity(cache_ptr: *mut Cache, archive: u32) {}
+*/
 
 /// Open a cache at the given path
 ///
@@ -961,6 +898,10 @@ pub unsafe extern "C" fn cache_capacity(cache_ptr: *mut Cache, archive: u32) {}
 /// # Returns
 ///
 /// A pointer to the cache
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences a raw pointer
 #[no_mangle]
 pub unsafe extern "C" fn cache_open(path: *const c_char) -> *mut Cache {
     // Get CStr
@@ -991,6 +932,10 @@ pub unsafe extern "C" fn cache_open(path: *const c_char) -> *mut Cache {
 ///
 /// The function returns a pointer to the buffer containing the file data, where the length is stored in the `out_len` variable.
 /// The caller is responsible for freeing the buffer using the function `cache_free`.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers.
 #[no_mangle]
 pub unsafe extern "C" fn cache_read(
     cache_ptr: *mut Cache,
@@ -1000,8 +945,6 @@ pub unsafe extern "C" fn cache_read(
     xtea_keys_arg: *const [u32; 4],
     out_len: *mut u32,
 ) -> *mut u8 {
-    trace!("cache_read(cache_ptr = {:?}, archive = {}, group = {}, file = {}, xtea_keys = {:?}, out_len = {:?})", cache_ptr, archive, group, file, xtea_keys_arg, out_len);
-
     // Dereference the cache
     let cache = &*cache_ptr;
 
@@ -1086,10 +1029,12 @@ pub unsafe extern "C" fn cache_free(buffer: *mut u8) {
     }
 }
 
+/*
 #[no_mangle]
 pub unsafe extern "C" fn cache_write(cache_ptr: *mut Cache, archive: u32) {}
 #[no_mangle]
 pub unsafe extern "C" fn cache_remove(cache_ptr: *mut Cache, archive: u32) {}
+*/
 
 /// Close a cache
 ///
