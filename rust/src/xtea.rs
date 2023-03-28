@@ -2,7 +2,7 @@ const ROUNDS: u32 = 32;
 const RATIO: u32 = 0x9E3779B9;
 
 /// Enciphers the data with the given XTEA keys. Defaults to 32 rounds
-pub fn xtea_encipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
+pub fn _xtea_encipher(data: &[u8], keys: &[u32; 4]) -> Vec<u8> {
     let blocks = data.len() / 8;
     let mut buf = data.to_vec();
 

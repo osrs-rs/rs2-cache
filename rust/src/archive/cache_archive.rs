@@ -15,7 +15,7 @@ pub struct CacheArchive {
 }
 
 impl CacheArchive {
-    pub fn test_func() {}
+    pub fn _test_func() {}
 }
 
 impl Archive for CacheArchive {
@@ -63,8 +63,8 @@ impl Archive for CacheArchive {
         let files = Group::unpack(buf, &self.index.groups.get(&entry_id).unwrap().files);
 
         Unpacked {
-            dirty: false,
-            key,
+            _dirty: false,
+            _key: key,
             files,
         }
     }
@@ -74,8 +74,8 @@ impl Archive for CacheArchive {
     }
 
     // TODO: Implement
-    fn verify_compressed(&self, buf: &[u8], entry: &Js5IndexEntry) {}
+    fn verify_compressed(&self, _buf: &[u8], _entry: &Js5IndexEntry) {}
 
     // TODO: Implement
-    fn verify_uncompressed(&self, buf: &[u8], entry: &Js5IndexEntry) {}
+    fn verify_uncompressed(&self, _buf: &[u8], _entry: &Js5IndexEntry) {}
 }

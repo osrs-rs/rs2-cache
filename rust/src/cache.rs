@@ -4,6 +4,7 @@ use crate::{
     js5_compression::Js5Compression,
     js5_index::Js5Index,
     store::{store_open, Store},
+    Cache,
 };
 use std::{collections::HashMap, io};
 use thiserror::Error;
@@ -23,17 +24,6 @@ pub enum CacheError {
     Unknown,
 }
 
-pub struct Cache {
-    /// Store
-    store: Box<dyn Store>,
-
-    /// Archives
-    archives: HashMap<u8, CacheArchive>,
-
-    /// Unpacked cache size
-    unpacked_cache_size: usize,
-}
-
 impl Cache {
     pub fn open(input_path: &str) -> io::Result<Cache> {
         Self::open_with_store(store_open(input_path))
@@ -43,7 +33,7 @@ impl Cache {
         let mut cache = Self {
             store,
             archives: HashMap::new(),
-            unpacked_cache_size: UNPACKED_CACHE_SIZE_DEFAULT,
+            _unpacked_cache_size: UNPACKED_CACHE_SIZE_DEFAULT,
         };
         cache.init();
 

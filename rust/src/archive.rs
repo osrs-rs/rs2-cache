@@ -1,10 +1,5 @@
-use crate::{
-    group::Group,
-    js5_compression::Js5Compression,
-    js5_index::{Js5Index, Js5IndexEntry},
-    store::Store,
-};
-use std::collections::{BTreeMap, HashMap};
+use crate::{js5_index::Js5IndexEntry, store::Store};
+use std::collections::BTreeMap;
 
 pub mod cache_archive;
 
@@ -37,8 +32,8 @@ pub trait Archive {
 }
 
 pub struct Unpacked {
-    dirty: bool,
-    key: Option<[u32; 4]>,
+    _dirty: bool,
+    _key: Option<[u32; 4]>,
     files: BTreeMap<u32, Vec<u8>>,
 }
 
