@@ -7,11 +7,13 @@
 [![OSRS Version](https://img.shields.io/badge/OSRS-208-blue)](https://img.shields.io/badge/OSRS-208-blue)
 [![Discord](https://img.shields.io/discord/926860365873184768?color=5865F2)](https://discord.gg/CcTa7TZfSc)
 
-A RS2 cache library written in Rust, based on the OpenRS2 implementation.
+A RS2 cache library written in Rust, based on the [OpenRS2](https://github.com/openrs2/openrs2) implementation.
+
+It should be noted: RS2 also includes Old School Runescape.
 
 ## Installation
 
-Add this to your `Cargo.toml` file:
+Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
@@ -40,9 +42,7 @@ fn main() -> Result<(), osrscache::Error> {
 
 If you have suggestions for features, or want to add for example a new loader for the cache, feel free to make a pull request. For bigger features it is advised to [open an issue](https://github.com/osrs-rs/rs2-cache/issues/new) in order to discuss it beforehand.
 
-Examples can be found in the [examples](examples/) directory which include the osrs update protocol.
-
 ## Credits
 
-- Graham: For his work on [OpenRS2](https://github.com/openrs2/openrs2). If you are using Kotlin and working on a RS2 rev server, it is highly recommended to utilize it for any cache related tasks.
-- JayArrowz: Created the implementation for the C# backend of rs2-cache.
+- Graham: For his work on [OpenRS2](https://github.com/openrs2/openrs2). If you are using Kotlin and working on a RS2 rev server, it is highly recommended to utilise it for any cache related tasks.
+- JayArrowz: Created the implementation that allows C# to use rs2-cache.
