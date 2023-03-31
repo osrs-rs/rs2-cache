@@ -35,28 +35,26 @@ jobs:
             lib_prefix: lib
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
+    - name: Install Rust Toolchain
+      run: rustup toolchain install stable --profile minimal -c rustfmt,clippy
 
     - name: Build
-      run: cargo build --release
+      run: cargo build --manifest-path=rust/Cargo.toml --verbose --release
 
     - name: Upload dynamic binaries to release
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/release/${{ matrix.lib_prefix }}osrscache${{ matrix.dynamic_suffix }}
-        asset_name: osrscache${{ matrix.asset_suffix }}${{ matrix.dynamic_suffix }}
+        file: rust/target/release/${{ matrix.lib_prefix }}rs2cache${{ matrix.dynamic_suffix }}
+        asset_name: rs2cache${{ matrix.asset_suffix }}${{ matrix.dynamic_suffix }}
         tag: ${{ github.ref }}
 
     - name: Upload static binaries to release
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/release/${{ matrix.lib_prefix }}osrscache${{ matrix.static_suffix }}
-        asset_name: osrscache${{ matrix.asset_suffix }}${{ matrix.static_suffix }}
+        file: rust/target/release/${{ matrix.lib_prefix }}rs2cache${{ matrix.static_suffix }}
+        asset_name: rs2cache${{ matrix.asset_suffix }}${{ matrix.static_suffix }}
         tag: ${{ github.ref }}

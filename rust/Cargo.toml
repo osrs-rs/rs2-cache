@@ -1,19 +1,18 @@
 [package]
-name = "osrs-cache"
-version = "0.3.0"
+name = "rs2-cache"
+version = "0.0.0"
 edition = "2021"
 license = "MIT"
-description = "A cache library for the Oldschool Runescape JS5 file system."
-repository = "https://github.com/runecore/osrs-cache"
-documentation = "https://docs.rs/osrs-cache"
-readme = "README.md"
-keywords = ["runescape", "osrs"]
+description = "A cache library for RS2, based on OpenRS2."
+repository = "https://github.com/osrs-rs/rs2-cache"
+documentation = "https://docs.rs/rs2-cache"
+readme = "../.github/readme.md"
+keywords = ["runescape", "osrs", "rs2"]
 exclude = [".gitignore", "data/*"]
 categories = ["development-tools", "filesystem"]
 
 [lib]
-name = "osrscache"
-path = "src/lib.rs"
+name = "rs2cache"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
@@ -22,4 +21,6 @@ bzip2 = "0.4"
 memmap2 = "0.5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-osrs-buffer = "0.6"
+osrs-bytes = "0.3"
+flate2 = "1.0"
+lzma-rs = { version = "0.3", features = ["raw_decoder"] }
