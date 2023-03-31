@@ -44,4 +44,5 @@ Examples can be found in the [examples](examples/) directory which include the o
 
 ## Credits
 
-Graham for his work on [OpenRS2](https://github.com/openrs2/openrs2). If you are using Kotlin and working on a RS2 rev server, it is highly recommended to utilize it. 
+- Graham: For his work on [OpenRS2](https://github.com/openrs2/openrs2). If you are using Kotlin and working on a RS2 rev server, it is highly recommended to utilize it for any cache related tasks.
+- JayArrowz: Created the implementation for the C# backend of rs2-cache.
