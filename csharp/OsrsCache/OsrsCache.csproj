@@ -1,0 +1,82 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<Import Project="Nuget.Projects.props" />
+	<PropertyGroup>
+		<TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<LangVersion>8.0</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+	<ItemGroup>
+		<None Include="Runtimes/**/*.*" PackagePath="Runtimes/" Pack="true">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="./Runtimes/osx-x64/*/libosrscache.dylib" Link="libosrscache.dylib">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="./Runtimes/win-x64/*/osrscache.dll" Link="osrscache.dll">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="./Runtimes/linux-x64/*/libosrscache.so" Link="libosrscache.so">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<!-- @TODO at moment this only assumes debug target for rust build, we should pass $(configuration) rust build command-->
+	<Target Name="CompileNativeRuntimes" BeforeTargets="BeforeBuild">
+		<!-- build for osx -->
+		<Exec Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'" Command="cargo build --manifest-path ../../rust/Cargo.toml --target-dir ./Runtimes/osx-x64" ConsoleToMSBuild="true" />
+		<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">
+			<None Include=".\Runtimes\osx-x64\*\libosrscache.dylib" Link="libosrscache.dylib">
+				<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			</None>
+		</ItemGroup>
+		<!-- build for windows -->
+		<Exec Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'" Command="cargo build --manifest-path ../../rust/Cargo.toml --target-dir .\Runtimes\win-x64" ConsoleToMSBuild="true" />
+		<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
+			<None Include=".\Runtimes\win-x64\*\osrscache.dll" Link="osrscache.dll">
+				<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			</None>
+		</ItemGroup>
+		<!-- build for *nix -->
+		<Exec Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'" Command="cargo build --manifest-path ../../rust/Cargo.toml --target-dir ./Runtimes/linux-x64" ConsoleToMSBuild="true" />
+		<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">
+			<None Include=".\Runtimes\linux-x64/*\libosrscache.so" Link="libosrscache.so">
+				<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			</None>
+		</ItemGroup>
+	</Target>
+	<!-- end build natives -->
+	<!-- remove cargo build guff from sln -->
+	<ItemGroup>
+		<None Remove="Runtimes\*\*\.cargo-lock" />
+		<None Remove="Runtimes\*\*\incremental\**" />
+		<None Remove="Runtimes\*\*\deps\**" />
+		<None Remove="Runtimes\*\*\build\**" />
+		<None Remove="Runtimes\*\.rustc_info.json" />
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Remove="Runtimes\*\*\incremental\**" />
+		<Compile Remove="Runtimes\*\*\deps\**" />
+		<Compile Remove="Runtimes\*\*\build\**" />
+	</ItemGroup>
+	<ItemGroup>
+		<EmbeddedResource Remove="Runtimes\*\*\incremental\**" />
+		<EmbeddedResource Remove="Runtimes\*\*\deps\**" />
+		<EmbeddedResource Remove="Runtimes\*\*\build\**" />
+	</ItemGroup>
+	<ItemGroup>
+	  <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="7.0.0" />
+	</ItemGroup>
+	<Target DependsOnTargets="ResolveReferences" Name="CopyProjectReferencesToPackage">
+		<ItemGroup>
+			<BuildOutputInPackage Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+		</ItemGroup>
+	</Target>
+</Project>
