@@ -255,6 +255,120 @@ mod tests {
         });
     }
 
+    #[test]
+    fn test_invalid_type() {
+        read("invalid-type.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::UnknownCompressionType(4))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_invalid_length() {
+        read("invalid-length.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::NegativeLength(-2147483648))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_invalid_uncompressed_length() {
+        read("invalid-uncompressed-length.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::UncompressedLengthIsNegative(
+                    -2147483648
+                ))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_none_eof() {
+        read("none-eof.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::DataTruncated)
+            ));
+        });
+    }
+
+    #[test]
+    fn test_bzip2_eof() {
+        read("bzip2-eof.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::Io(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_gzip_eof() {
+        read("gzip-eof.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::Io(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_lzma_eof() {
+        read("lzma-eof.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::Io(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_bzip2_corrupt() {
+        read("bzip2-corrupt.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::Io(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_gzip_corrupt() {
+        read("gzip-corrupt.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::Io(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_lzma_corrupt() {
+        read("lzma-corrupt.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::Lzma(lzma_rs::error::Error::LzmaError(
+                    _
+                )))
+            ));
+        });
+    }
+
+    #[test]
+    fn test_missing_header() {
+        read("missing-header.dat", |data| {
+            assert!(matches!(
+                Js5Compression::uncompress(data, None),
+                Err(Js5CompressionError::MissingHeader)
+            ));
+        });
+    }
+
     // Impl this later once Results are implemented
     /*#[test]
     fn test_bzip2_eof() {
