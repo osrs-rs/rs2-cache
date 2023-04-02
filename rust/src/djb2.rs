@@ -24,16 +24,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_djb2_hashing() {
+    fn test_djb2_hash_1() {
         let hashed_value = djb2_hash("m50_50");
         let assert_val = -1123920270;
 
         assert_eq!(hashed_value, assert_val as u32);
     }
 
-    /*#[test]
-    fn party_hat_test() {
-        let cache = Cache::open("data/cache").unwrap();
-        fs::write("blue_partyhat.dat", cache.read(2, 10, 1042, None));
-    }*/
+    #[test]
+    fn test_djb2_2() {
+        let hashed_value = djb2_hash("huffman");
+        let assert_val = 1258058669;
+
+        assert_eq!(hashed_value, assert_val as u32);
+    }
 }

@@ -1,4 +1,5 @@
 use archive::cache_archive::CacheArchive;
+use group::GroupError;
 use std::collections::HashMap;
 use store::Store;
 
@@ -24,3 +25,4 @@ pub struct Cache {
     /// Unpacked cache size
     _unpacked_cache_size: usize,
 }
+

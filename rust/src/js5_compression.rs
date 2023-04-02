@@ -4,6 +4,25 @@ use flate2::bufread::GzDecoder;
 use lzma_rs::{decompress, lzma_decompress_with_options};
 use osrs_bytes::ReadExt;
 use std::io::{Cursor, Read};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Js5CompressionError {
+    #[error("missing header")]
+    MissingHeader,
+    #[error("negative length: {0}")]
+    NegativeLength(i32),
+    #[error("data truncated")]
+    DataTruncated,
+    #[error("uncompressed length is negative: {0}")]
+    UncompressedLengthIsNegative(i32),
+    #[error("unknown compression type: {0}")]
+    UnknownCompressionType(u8),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("lzma error: {0}")]
+    Lzma(#[from] lzma_rs::error::Error),
+}
 
 const COMPRESSION_TYPE_NONE: u8 = 0;
 const COMPRESSION_TYPE_BZIP: u8 = 1;
@@ -12,63 +31,70 @@ const COMPRESSION_TYPE_LZMA: u8 = 3;
 pub struct Js5Compression {}
 
 impl Js5Compression {
-    pub fn uncompress<T: AsRef<[u8]>>(input: T, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
+    pub fn uncompress<T: AsRef<[u8]>>(
+        input: T,
+        xtea_keys: Option<[u32; 4]>,
+    ) -> Result<Vec<u8>, Js5CompressionError> {
         let mut input_ref = input.as_ref();
 
         if input_ref.as_ref().len() < 5 {
-            panic!("Missing header");
+            return Err(Js5CompressionError::MissingHeader);
         }
 
-        let type_id = input_ref.read_u8().unwrap();
-        // TODO: Check if type_id is correct here and panic if not or just like throw an error and return here
+        let type_id = input_ref.read_u8()?;
+        // TODO: Check if type_id is correct here and error if not in range 0-3
 
-        let len = input_ref.read_i32().unwrap();
+        let len = input_ref.read_i32()?;
         if len < 0 {
-            panic!("Length is negative {len}");
+            return Err(Js5CompressionError::NegativeLength(len));
         }
 
         if type_id == COMPRESSION_TYPE_NONE {
             if input_ref.len() < len as usize {
-                panic!("Data truncated");
+                return Err(Js5CompressionError::DataTruncated);
             }
 
             if let Some(xtea_keys) = xtea_keys {
-                return xtea_decipher(input_ref, &xtea_keys);
+                return Ok(xtea_decipher(input_ref, &xtea_keys));
             }
 
-            return input_ref[..len as usize].to_vec();
+            return Ok(input_ref[..len as usize].to_vec());
         }
 
         let len_with_uncompressed_len = len + 4;
         if input_ref.len() < len_with_uncompressed_len as usize {
-            panic!("Data truncated");
+            return Err(Js5CompressionError::DataTruncated);
         }
 
         let plain_text = Self::decrypt(input_ref, len_with_uncompressed_len, xtea_keys);
         let mut plain_text_csr = Cursor::new(plain_text);
 
-        let uncompressed_len = plain_text_csr.read_i32().unwrap();
+        let uncompressed_len = plain_text_csr.read_i32()?;
         if uncompressed_len < 0 {
-            panic!("Uncompressed length is negative: {uncompressed_len}");
+            return Err(Js5CompressionError::UncompressedLengthIsNegative(
+                uncompressed_len,
+            ));
         }
 
         // Copy bytes from the cursor to a buffer skipping over already read ones
         let mut plain_text =
             vec![0; plain_text_csr.get_ref().len() - plain_text_csr.position() as usize];
 
-        plain_text_csr.read_exact(&mut plain_text).unwrap();
+        plain_text_csr.read_exact(&mut plain_text)?;
 
         // Skip version by using len
         let input_stream = &plain_text[..len as usize];
 
-        match type_id {
+        let decomp = match type_id {
             COMPRESSION_TYPE_BZIP => {
                 decompress_archive_bzip2(input_stream, uncompressed_len as u32)
             }
             COMPRESSION_TYPE_GZIP => decompress_archive_gzip(input_stream, uncompressed_len as u32),
             COMPRESSION_TYPE_LZMA => decompress_archive_lzma(input_stream, uncompressed_len as u32),
-            _ => panic!("Unknown compression type {type_id}"),
-        }
+            _ => return Err(Js5CompressionError::UnknownCompressionType(type_id)),
+        }?;
+
+        Ok(decomp)
     }
 
     fn decrypt<T: AsRef<[u8]>>(input: T, len: i32, xtea_keys: Option<[u32; 4]>) -> Vec<u8> {
@@ -81,7 +107,10 @@ impl Js5Compression {
 }
 
 // Decompress using bzip2
-fn decompress_archive_bzip2<T: AsRef<[u8]>>(archive_data: T, decompressed_size: u32) -> Vec<u8> {
+fn decompress_archive_bzip2<T: AsRef<[u8]>>(
+    archive_data: T,
+    decompressed_size: u32,
+) -> Result<Vec<u8>, Js5CompressionError> {
     let mut decompressed_data = vec![0; decompressed_size as usize];
 
     let mut compressed_data = Vec::with_capacity(archive_data.as_ref().len() + 4);
@@ -90,22 +119,28 @@ fn decompress_archive_bzip2<T: AsRef<[u8]>>(archive_data: T, decompressed_size: 
 
     let mut decompressor = BzDecoder::new(compressed_data.as_slice());
 
-    decompressor.read_exact(&mut decompressed_data).unwrap();
-    decompressed_data
+    decompressor.read_exact(&mut decompressed_data)?;
+    Ok(decompressed_data)
 }
 
 // Decompress using gzip
-fn decompress_archive_gzip<T: AsRef<[u8]>>(archive_data: T, decompressed_size: u32) -> Vec<u8> {
+fn decompress_archive_gzip<T: AsRef<[u8]>>(
+    archive_data: T,
+    decompressed_size: u32,
+) -> Result<Vec<u8>, Js5CompressionError> {
     let mut decompressed_data = vec![0; decompressed_size as usize];
 
     let mut decompressor = GzDecoder::new(archive_data.as_ref());
-    decompressor.read_exact(&mut decompressed_data).unwrap();
+    decompressor.read_exact(&mut decompressed_data)?;
 
-    decompressed_data
+    Ok(decompressed_data)
 }
 
 // Decompress using lzma
-fn decompress_archive_lzma<T: AsRef<[u8]>>(archive_data: T, decompressed_size: u32) -> Vec<u8> {
+fn decompress_archive_lzma<T: AsRef<[u8]>>(
+    archive_data: T,
+    decompressed_size: u32,
+) -> Result<Vec<u8>, Js5CompressionError> {
     let mut decomp: Vec<u8> = Vec::new();
 
     lzma_decompress_with_options(
@@ -116,10 +151,9 @@ fn decompress_archive_lzma<T: AsRef<[u8]>>(archive_data: T, decompressed_size: u
             memlimit: None,
             allow_incomplete: false,
         },
-    )
-    .unwrap();
+    )?;
 
-    decomp
+    Ok(decomp)
 }
 
 #[cfg(test)]
@@ -132,14 +166,20 @@ mod tests {
     #[test]
     fn test_uncompress_none() {
         read("none.dat", |data| {
-            assert_eq!("OpenRS2".as_bytes(), Js5Compression::uncompress(data, None));
+            assert_eq!(
+                "OpenRS2".as_bytes(),
+                Js5Compression::uncompress(data, None).unwrap()
+            );
         });
     }
 
     #[test]
     fn test_uncompress_gzip() {
         read("gzip.dat", |data| {
-            assert_eq!("OpenRS2".as_bytes(), Js5Compression::uncompress(data, None));
+            assert_eq!(
+                "OpenRS2".as_bytes(),
+                Js5Compression::uncompress(data, None).unwrap()
+            );
         });
     }
 
@@ -147,7 +187,10 @@ mod tests {
     fn test_uncompress_large_gzip() {
         read("gzip-large.dat", |input| {
             read("large.dat", |expected| {
-                assert_eq!(expected.to_vec(), Js5Compression::uncompress(input, None))
+                assert_eq!(
+                    expected.to_vec(),
+                    Js5Compression::uncompress(input, None).unwrap()
+                )
             });
         });
     }
@@ -155,14 +198,20 @@ mod tests {
     #[test]
     fn test_uncompress_bzip2() {
         read("bzip2.dat", |data| {
-            assert_eq!("OpenRS2".as_bytes(), Js5Compression::uncompress(data, None));
+            assert_eq!(
+                "OpenRS2".as_bytes(),
+                Js5Compression::uncompress(data, None).unwrap()
+            );
         });
     }
 
     #[test]
     fn test_uncompress_lzma() {
         read("lzma.dat", |data| {
-            assert_eq!("OpenRS2".as_bytes(), Js5Compression::uncompress(data, None));
+            assert_eq!(
+                "OpenRS2".as_bytes(),
+                Js5Compression::uncompress(data, None).unwrap()
+            );
         });
     }
 
@@ -171,7 +220,7 @@ mod tests {
         read("none-encrypted.dat", |data| {
             assert_eq!(
                 "OpenRS2".repeat(3).as_bytes(),
-                Js5Compression::uncompress(data, Some(KEY))
+                Js5Compression::uncompress(data, Some(KEY)).unwrap()
             );
         });
     }
@@ -181,7 +230,7 @@ mod tests {
         read("gzip-encrypted.dat", |data| {
             assert_eq!(
                 "OpenRS2".as_bytes(),
-                Js5Compression::uncompress(data, Some(KEY))
+                Js5Compression::uncompress(data, Some(KEY)).unwrap()
             );
         });
     }
@@ -191,7 +240,7 @@ mod tests {
         read("bzip2-encrypted.dat", |data| {
             assert_eq!(
                 "OpenRS2".as_bytes(),
-                Js5Compression::uncompress(data, Some(KEY))
+                Js5Compression::uncompress(data, Some(KEY)).unwrap()
             );
         });
     }
@@ -201,7 +250,7 @@ mod tests {
         read("lzma-encrypted.dat", |data| {
             assert_eq!(
                 "OpenRS2".as_bytes(),
-                Js5Compression::uncompress(data, Some(KEY))
+                Js5Compression::uncompress(data, Some(KEY)).unwrap()
             );
         });
     }

@@ -27,7 +27,7 @@ pub unsafe extern "C" fn cache_open(path: *const c_char) -> *mut Cache {
     let path_cstr = CStr::from_ptr(path);
 
     // Convert to Rust str
-    let path_str = path_cstr.to_str().unwrap();
+    let path_str = path_cstr.to_str().expect("failed to convert path to str");
 
     // Open the cache
     let cache = Cache::open(path_str).expect("failed to open cache");
@@ -74,7 +74,9 @@ pub unsafe extern "C" fn cache_read(
     }
 
     // Call the read function
-    let mut buf = cache.read(archive, group, file, xtea_keys);
+    let mut buf = cache
+        .read(archive, group, file, xtea_keys)
+        .expect("failed reading file");
 
     let data = buf.as_mut_ptr();
     *out_len = buf.len() as u32;
@@ -119,10 +121,14 @@ pub unsafe extern "C" fn cache_read_named_group(
         xtea_keys = Some(*xtea_keys_arg);
     }
 
-    let group_str = CStr::from_ptr(group).to_str().unwrap();
+    let group_str = CStr::from_ptr(group)
+        .to_str()
+        .expect("failed to convert group to str");
 
     // Call the read function
-    let mut buf = cache.read_named_group(archive, group_str, file, xtea_keys);
+    let mut buf = cache
+        .read_named_group(archive, group_str, file, xtea_keys)
+        .expect("failed reading named group");
 
     let data = buf.as_mut_ptr();
     *out_len = buf.len() as u32;

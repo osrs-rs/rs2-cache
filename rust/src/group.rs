@@ -1,26 +1,44 @@
 use crate::js5_index::Js5IndexFile;
 use osrs_bytes::ReadExt;
 use std::{collections::BTreeMap, io::Cursor};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum GroupError {
+    #[error("group is empty")]
+    Empty,
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("failed getting single entry")]
+    SingleEntry,
+    #[error("failed getting last byte")]
+    LastByte,
+    #[error("failed getting file")]
+    File,
+}
 
 pub struct Group {}
 
 impl Group {
-    pub fn unpack(input: Vec<u8>, group: &BTreeMap<u32, Js5IndexFile>) -> BTreeMap<u32, Vec<u8>> {
+    pub fn unpack(
+        input: Vec<u8>,
+        group: &BTreeMap<u32, Js5IndexFile>,
+    ) -> Result<BTreeMap<u32, Vec<u8>>, GroupError> {
         if group.is_empty() {
-            panic!("Group has no files")
+            return Err(GroupError::Empty);
         }
 
         if group.len() == 1 {
-            let single_entry = group.keys().next().unwrap();
+            let single_entry = group.keys().next().ok_or(GroupError::SingleEntry)?;
             let mut files = BTreeMap::new();
             files.insert(*single_entry, input);
-            return files;
+            return Ok(files);
         }
 
         let mut input_reader = Cursor::new(&input);
 
         // Now begin going over the stripes
-        let stripes = *input.last().unwrap();
+        let stripes = *input.last().ok_or(GroupError::LastByte)?;
 
         let mut data_index = input_reader.position() as i32;
         let trailer_index = input.len() - (stripes as usize * group.len() * 4) - 1;
@@ -31,7 +49,8 @@ impl Group {
         for _ in 0..stripes {
             let mut prev_len = 0;
             for j in lens.iter_mut() {
-                prev_len += input_reader.read_i32().unwrap();
+                prev_len += input_reader.read_i32()?;
+
                 *j += prev_len;
             }
         }
@@ -46,8 +65,8 @@ impl Group {
         for _ in 0..stripes {
             let mut prev_len = 0;
             for x in group.keys() {
-                prev_len += input_reader.read_i32().unwrap();
-                let dst = files.get_mut(x).unwrap();
+                prev_len += input_reader.read_i32()?;
+                let dst = files.get_mut(x).ok_or(GroupError::File)?;
                 let cap = dst.capacity();
                 dst.extend_from_slice(
                     &input[data_index as usize..(data_index + prev_len) as usize],
@@ -61,7 +80,7 @@ impl Group {
             }
         }
 
-        files
+        Ok(files)
     }
 }
 
@@ -74,7 +93,8 @@ mod tests {
         let actual = Group::unpack(
             vec![0, 1, 2, 3],
             &BTreeMap::from([(1, Js5IndexFile { name_hash: 0 })]),
-        );
+        )
+        .unwrap();
         let expected = BTreeMap::from([(1, vec![0, 1, 2, 3])]);
 
         assert_eq!(expected, actual);
@@ -90,7 +110,8 @@ mod tests {
                 (1, Js5IndexFile { name_hash: 0 }),
                 (3, Js5IndexFile { name_hash: 0 }),
             ]),
-        );
+        )
+        .unwrap();
 
         assert_eq!(expected, actual);
     }
@@ -111,7 +132,8 @@ mod tests {
                 (1, Js5IndexFile { name_hash: 0 }),
                 (3, Js5IndexFile { name_hash: 0 }),
             ]),
-        );
+        )
+        .unwrap();
 
         assert_eq!(expected, actual);
     }
@@ -133,7 +155,8 @@ mod tests {
                 (1, Js5IndexFile { name_hash: 0 }),
                 (3, Js5IndexFile { name_hash: 0 }),
             ]),
-        );
+        )
+        .unwrap();
 
         assert_eq!(expected, actual);
     }

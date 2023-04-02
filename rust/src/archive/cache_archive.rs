@@ -1,4 +1,4 @@
-use super::{Archive, Unpacked};
+use super::{Archive, ArchiveError, Unpacked};
 use crate::{
     group::Group,
     js5_compression::Js5Compression,
@@ -23,12 +23,18 @@ impl Archive for CacheArchive {
         self.is_dirty
     }
 
-    fn read(&mut self, group: u32, file: u16, key: Option<[u32; 4]>, store: &dyn Store) -> Vec<u8> {
+    fn read(
+        &mut self,
+        group: u32,
+        file: u16,
+        key: Option<[u32; 4]>,
+        store: &dyn Store,
+    ) -> Result<Vec<u8>, ArchiveError> {
         let unpacked = match self.unpacked_cache.get(&group) {
             Some(unpacked) => unpacked,
-            None => self.get_unpacked(group, key, store),
+            None => self.get_unpacked(group, key, store)?,
         };
-        unpacked.read(file as u32)
+        Ok(unpacked.read(file as u32)?)
     }
 
     fn read_named_group(
@@ -37,13 +43,13 @@ impl Archive for CacheArchive {
         file: u16,
         key: Option<[u32; 4]>,
         store: &dyn Store,
-    ) -> Vec<u8> {
-        let entry_id = self.index.get_named(group_name_hash).unwrap();
+    ) -> Result<Vec<u8>, ArchiveError> {
+        let entry_id = self.index.get_named(group_name_hash)?;
         let unpacked = match self.unpacked_cache.get(&entry_id) {
             Some(unpacked) => unpacked,
-            None => self.get_unpacked(entry_id, key, store),
+            None => self.get_unpacked(entry_id, key, store)?,
         };
-        unpacked.read(file as u32)
+        Ok(unpacked.read(file as u32)?)
     }
 
     fn get_unpacked(
@@ -51,28 +57,40 @@ impl Archive for CacheArchive {
         entry_id: u32,
         key: Option<[u32; 4]>,
         store: &dyn Store,
-    ) -> &Unpacked {
-        let entry = self.index.groups.get(&entry_id).unwrap();
+    ) -> Result<&Unpacked, ArchiveError> {
+        let entry = self
+            .index
+            .groups
+            .get(&entry_id)
+            .ok_or(ArchiveError::GroupNotFound(entry_id))?;
 
-        let compressed = self.read_packed(entry_id, store);
+        let compressed = self.read_packed(entry_id, store)?;
 
         self.verify_compressed(&compressed, entry);
 
-        let buf = Js5Compression::uncompress(compressed, key);
+        let buf = Js5Compression::uncompress(compressed, key)?;
 
         self.verify_uncompressed(&buf, entry);
 
-        let files = Group::unpack(buf, &self.index.groups.get(&entry_id).unwrap().files);
+        let files = Group::unpack(
+            buf,
+            &self
+                .index
+                .groups
+                .get(&entry_id)
+                .ok_or(ArchiveError::GroupNotFound(entry_id))?
+                .files,
+        )?;
 
-        self.unpacked_cache.entry(entry_id).or_insert(Unpacked {
+        Ok(self.unpacked_cache.entry(entry_id).or_insert(Unpacked {
             _dirty: false,
             _key: key,
             files,
-        })
+        }))
     }
 
-    fn read_packed(&self, group: u32, store: &dyn Store) -> Vec<u8> {
-        store.read(self.archive, group)
+    fn read_packed(&self, group: u32, store: &dyn Store) -> Result<Vec<u8>, ArchiveError> {
+        Ok(store.read(self.archive, group)?)
     }
 
     // TODO: Implement

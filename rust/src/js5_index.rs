@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     io::Read,
 };
+use thiserror::Error;
 
 #[allow(dead_code)]
 pub enum Js5Protocol {
@@ -36,6 +37,14 @@ pub struct Js5IndexEntry {
     pub files: BTreeMap<u32, Js5IndexFile>,
 }
 
+#[derive(Error, Debug)]
+pub enum Js5IndexError {
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("failed getting named hash table entry")]
+    NamedHashTableEntry,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Js5Index {
     pub protocol: u8,
@@ -49,24 +58,24 @@ pub struct Js5Index {
 }
 
 impl Js5Index {
-    pub fn read<T: AsRef<[u8]>>(buf: T) -> Js5Index {
+    pub fn read<T: AsRef<[u8]>>(buf: T) -> Result<Js5Index, Js5IndexError> {
         let mut buf_ref = buf.as_ref();
 
-        let protocol = buf_ref.read_u8().unwrap();
+        let protocol = buf_ref.read_u8()?;
 
         let read_func = if protocol >= Js5Protocol::Smart as u8 {
-            |v: &mut &[u8]| -> u32 { v.read_u32_smart().unwrap() }
+            |v: &mut &[u8]| -> Result<u32, Js5IndexError> { Ok(v.read_u32_smart()?) }
         } else {
-            |v: &mut &[u8]| -> u32 { v.read_u16().unwrap() as u32 }
+            |v: &mut &[u8]| -> Result<u32, Js5IndexError> { Ok(v.read_u16()? as u32) }
         };
 
         let version = if protocol >= Js5Protocol::Versioned as u8 {
-            buf_ref.read_i32().unwrap()
+            buf_ref.read_i32()?
         } else {
             0
         };
-        let flags = buf_ref.read_u8().unwrap();
-        let size = read_func(&mut buf_ref);
+        let flags = buf_ref.read_u8()?;
+        let size = read_func(&mut buf_ref)?;
 
         // Create Js5Index
         let mut index = Js5Index {
@@ -82,8 +91,8 @@ impl Js5Index {
 
         // Begin creating the groups
         let mut prev_group_id = 0;
-        (0..size).for_each(|_| {
-            prev_group_id += read_func(&mut buf_ref);
+        for _ in 0..size {
+            prev_group_id += read_func(&mut buf_ref)?;
             index.groups.insert(
                 prev_group_id,
                 Js5IndexEntry {
@@ -98,22 +107,22 @@ impl Js5Index {
                     files: BTreeMap::new(),
                 },
             );
-        });
+        }
 
         if index.has_names {
             for (id, group) in index.groups.iter_mut() {
-                group.name_hash = buf_ref.read_i32().unwrap();
+                group.name_hash = buf_ref.read_i32()?;
                 index.name_hash_table.insert(group.name_hash as u32, *id);
             }
         }
 
         for group in index.groups.values_mut() {
-            group.checksum = buf_ref.read_u32().unwrap();
+            group.checksum = buf_ref.read_u32()?;
         }
 
         if index.has_uncompressed_checksums {
             for group in index.groups.values_mut() {
-                group.uncompressed_checksum = buf_ref.read_u32().unwrap();
+                group.uncompressed_checksum = buf_ref.read_u32()?;
             }
         }
 
@@ -122,49 +131,55 @@ impl Js5Index {
                 let digest_bits = 512;
                 let digest_bytes = digest_bits >> 3;
                 let mut digest = vec![0; digest_bytes];
-                buf_ref.read_exact(&mut digest).unwrap();
+                buf_ref.read_exact(&mut digest)?;
                 group.digest.extend(&digest);
             }
         }
 
         if index.has_lengths {
             for group in index.groups.values_mut() {
-                group.length = buf_ref.read_u32().unwrap();
-                group.uncompressed_length = buf_ref.read_u32().unwrap();
+                group.length = buf_ref.read_u32()?;
+                group.uncompressed_length = buf_ref.read_u32()?;
             }
         }
 
         for group in index.groups.values_mut() {
-            group.version = buf_ref.read_u32().unwrap();
+            group.version = buf_ref.read_u32()?;
         }
 
-        let group_sizes: Vec<u32> = (0..size).map(|_| read_func(&mut buf_ref)).collect();
+        let mut group_sizes = Vec::new();
+        for _ in 0..size {
+            group_sizes.push(read_func(&mut buf_ref)?);
+        }
 
         for (i, group) in index.groups.values_mut().enumerate() {
             let group_size = group_sizes[i];
 
             let mut prev_file_id = 0;
-            (0..group_size).for_each(|_| {
-                prev_file_id += read_func(&mut buf_ref);
+            for _ in 0..group_size {
+                prev_file_id += read_func(&mut buf_ref)?;
                 group
                     .files
                     .insert(prev_file_id, Js5IndexFile { name_hash: -1 });
-            });
+            }
         }
 
         if index.has_names {
             for group in index.groups.values_mut() {
                 for file in group.files.values_mut() {
-                    file.name_hash = buf_ref.read_i32().unwrap();
+                    file.name_hash = buf_ref.read_i32()?;
                 }
             }
         }
 
-        index
+        Ok(index)
     }
 
-    pub fn get_named(&self, name_hash: u32) -> Option<u32> {
-        self.name_hash_table.get(&name_hash).copied()
+    pub fn get_named(&self, name_hash: u32) -> Result<u32, Js5IndexError> {
+        self.name_hash_table
+            .get(&name_hash)
+            .ok_or(Js5IndexError::NamedHashTableEntry)
+            .copied()
     }
 }
 
@@ -179,7 +194,7 @@ mod tests {
     #[test]
     fn test_read_empty() {
         read("empty.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let empty_index = Js5Index {
                 protocol: Js5Protocol::Original as u8,
@@ -199,7 +214,7 @@ mod tests {
     #[test]
     fn test_read_versioned() {
         read("versioned.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let versioned_index = Js5Index {
                 protocol: Js5Protocol::Versioned as u8,
@@ -219,7 +234,7 @@ mod tests {
     #[test]
     fn test_read_no_flags() {
         read("no-flags.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let files_1 = {
                 let mut files = BTreeMap::new();
@@ -294,7 +309,7 @@ mod tests {
     #[test]
     fn test_read_named() {
         read("named.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let files = {
                 let mut files = BTreeMap::new();
@@ -345,7 +360,7 @@ mod tests {
     #[test]
     fn test_read_smart() {
         read("smart.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let files = {
                 let mut files = BTreeMap::new();
@@ -402,7 +417,7 @@ mod tests {
     #[test]
     fn test_read_digest() {
         read("digest.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let mut groups = BTreeMap::new();
             groups.insert(
@@ -442,7 +457,7 @@ mod tests {
     #[test]
     fn test_read_lengths() {
         read("lengths.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let mut groups = BTreeMap::new();
             groups.insert(
@@ -477,7 +492,7 @@ mod tests {
     #[test]
     fn test_read_uncompressed_checksum() {
         read("uncompressed-checksum.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let mut groups = BTreeMap::new();
             groups.insert(
@@ -512,7 +527,7 @@ mod tests {
     #[test]
     fn test_read_all_flaags() {
         read("all-flags.dat", |data| {
-            let index = Js5Index::read(data);
+            let index = Js5Index::read(data).unwrap();
 
             let files = {
                 let mut files = BTreeMap::new();
