@@ -322,7 +322,7 @@ mod tests {
         read("lzma-eof.dat", |data| {
             assert!(matches!(
                 Js5Compression::uncompress(data, None),
-                Err(Js5CompressionError::Io(_))
+                Err(Js5CompressionError::Lzma(lzma_rs::error::Error::IoError(_)))
             ));
         });
     }
@@ -368,14 +368,6 @@ mod tests {
             ));
         });
     }
-
-    // Impl this later once Results are implemented
-    /*#[test]
-    fn test_bzip2_eof() {
-        read_test("bzip2-eof.dat", |data| {
-            assert_eq!(Js5Compression::uncompress(data, None), "OpenRS2".as_bytes());
-        });
-    }*/
 
     fn read<P, F>(p: P, f: F)
     where
