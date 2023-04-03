@@ -25,7 +25,7 @@ rs2-cache = "0.1.0"
 ```rust
 use rs2cache::Cache;
 
-fn main() -> Result<(), osrscache::Error> {
+fn main() -> Result<(), rs2cache::cache::CacheError> {
     let cache = Cache::open("./cache")?;
 
     let index_id = 2; // Config index
