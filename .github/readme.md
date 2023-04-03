@@ -40,7 +40,7 @@ fn main() -> Result<(), rs2cache::cache::CacheError> {
 
 ## Contributing
 
-If you have suggestions for features, or want to add for example a new loader for the cache, feel free to make a pull request. For bigger features it is advised to [open an issue](https://github.com/osrs-rs/rs2-cache/issues/new) in order to discuss it beforehand.
+If you have new features you would like to have implemented, feel free to open a pull request. Do be advised that this repository aims to follow OpenRS2, so any edits should not deviate too far from it (if at all). For bigger features it is advised to [open an issue](https://github.com/osrs-rs/rs2-cache/issues/new) in order to discuss it beforehand.
 
 ## Credits
 
