@@ -5,11 +5,13 @@ use store::Store;
 
 mod archive;
 pub mod cache;
+pub mod checksumtable;
 mod djb2;
 mod ffi;
 mod group;
 mod js5_compression;
 mod js5_index;
+pub mod js5_masterindex;
 pub mod store;
 mod xtea;
 
@@ -25,4 +27,3 @@ pub struct Cache {
     /// Unpacked cache size
     _unpacked_cache_size: usize,
 }
-

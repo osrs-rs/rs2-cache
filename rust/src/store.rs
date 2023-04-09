@@ -7,6 +7,7 @@ pub mod flat_file_store;
 
 const DATA_PATH: &str = "main_file_cache.dat2";
 const LEGACY_DATA_PATH: &str = "main_file_cache.dat2";
+pub const ARCHIVESET: u8 = 255;
 
 #[derive(Error, Debug)]
 pub enum StoreError {
