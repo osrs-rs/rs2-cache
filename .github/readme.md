@@ -15,7 +15,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-rs2-cache = "0.2.0"
+rs2-cache = "0.3.0"
 ```
 
 ## Example
