@@ -33,7 +33,7 @@ impl ChecksumTable {
         Ok(vec)
     }
 
-    pub fn create(store: &dyn Store) -> Result<ChecksumTable, ChecksumTableError> {
+    pub fn create(store: &Box<dyn Store>) -> Result<ChecksumTable, ChecksumTableError> {
         let mut entries = Vec::new();
         let mut next_archive = 0;
 
