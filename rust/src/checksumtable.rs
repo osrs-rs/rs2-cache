@@ -17,11 +17,11 @@ pub struct ChecksumTable {
 }
 
 impl ChecksumTable {
-    pub fn write<T: AsMut<[u8]>>(&self, mut buf: T) -> Result<(), ChecksumTableError> {
-        let mut csr = Cursor::new(buf.as_mut());
+    pub fn write(&self) -> Result<Vec<u8>, ChecksumTableError> {
+        let mut vec = Vec::new();
 
         for entry in &self.entries {
-            csr.write_u32(*entry)?;
+            vec.write_u32(*entry)?;
         }
 
         let mut checksum: u32 = 1234;
@@ -29,7 +29,7 @@ impl ChecksumTable {
             checksum = (checksum << 1).wrapping_add(*entry)
         }
 
-        Ok(())
+        Ok(vec)
     }
 
     pub fn create(store: Box<dyn Store>) -> Result<ChecksumTable, ChecksumTableError> {
