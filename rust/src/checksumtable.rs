@@ -1,6 +1,7 @@
 use crate::store::Store;
 use crc32fast::hash;
 use osrs_bytes::WriteExt;
+use std::io::Cursor;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -17,8 +18,10 @@ pub struct ChecksumTable {
 
 impl ChecksumTable {
     pub fn write<T: AsMut<[u8]>>(&self, mut buf: T) -> Result<(), ChecksumTableError> {
+        let mut csr = Cursor::new(buf.as_mut());
+
         for entry in &self.entries {
-            buf.as_mut().write_u32(*entry)?;
+            csr.write_u32(*entry)?;
         }
 
         let mut checksum: u32 = 1234;
