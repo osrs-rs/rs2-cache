@@ -45,7 +45,7 @@ impl Cache {
     /// # Arguments
     ///
     /// * `store` - The store to use
-    pub fn open_with_store(store: Box<dyn Store + Send>) -> Result<Cache, CacheError> {
+    pub fn open_with_store(store: Box<dyn Store + Send + Sync>) -> Result<Cache, CacheError> {
         let mut cache = Self {
             store,
             archives: HashMap::new(),

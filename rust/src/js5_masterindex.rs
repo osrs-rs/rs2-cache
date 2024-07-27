@@ -59,7 +59,7 @@ impl Js5MasterIndex {
         buf
     }
 
-    pub fn create(store: &Box<dyn Store>) -> Js5MasterIndex {
+    pub fn create(store: &Box<dyn Store + Send + Sync>) -> Js5MasterIndex {
         let mut master_index = Js5MasterIndex {
             format: MASTERINDEXFORMAT_ORIGINAL,
             entries: Vec::new(),
