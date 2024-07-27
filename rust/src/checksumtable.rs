@@ -1,7 +1,6 @@
 use crate::store::Store;
 use crc32fast::hash;
 use osrs_bytes::WriteExt;
-use std::io::Cursor;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -34,7 +33,7 @@ impl ChecksumTable {
         Ok(vec)
     }
 
-    pub fn create(store: Box<dyn Store>) -> Result<ChecksumTable, ChecksumTableError> {
+    pub fn create(store: &dyn Store) -> Result<ChecksumTable, ChecksumTableError> {
         let mut entries = Vec::new();
         let mut next_archive = 0;
 
