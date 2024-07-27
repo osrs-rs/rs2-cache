@@ -13,7 +13,7 @@ pub enum ChecksumTableError {
 }
 
 pub struct ChecksumTable {
-    entries: Vec<u32>,
+    pub entries: Vec<u32>,
 }
 
 impl ChecksumTable {
@@ -28,6 +28,8 @@ impl ChecksumTable {
         for entry in &self.entries {
             checksum = (checksum << 1).wrapping_add(*entry)
         }
+
+        vec.write_u32(checksum)?;
 
         Ok(vec)
     }
