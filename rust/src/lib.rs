@@ -19,7 +19,7 @@ const _MAX_GROUP_SIZE: usize = (1 << 24) - 1;
 
 pub struct Cache {
     /// Store
-    pub store: Box<dyn Store>,
+    pub store: Box<dyn Store + Send>,
 
     /// Archives
     archives: HashMap<u8, CacheArchive>,
