@@ -16,9 +16,9 @@ pub struct ChecksumTable {
 }
 
 impl ChecksumTable {
-    pub fn write(&self, mut buf: &mut [u8]) -> Result<(), ChecksumTableError> {
+    pub fn write<T: AsMut<[u8]>>(&self, mut buf: T) -> Result<(), ChecksumTableError> {
         for entry in &self.entries {
-            buf.write_u32(*entry)?;
+            buf.as_mut().write_u32(*entry)?;
         }
 
         let mut checksum: u32 = 1234;
