@@ -16,9 +16,7 @@ pub struct ChecksumTable {
 }
 
 impl ChecksumTable {
-    pub fn write(&self) -> Result<(), ChecksumTableError> {
-        let mut buf = Vec::new();
-
+    pub fn write(&self, mut buf: &mut [u8]) -> Result<(), ChecksumTableError> {
         for entry in &self.entries {
             buf.write_u32(*entry)?;
         }
