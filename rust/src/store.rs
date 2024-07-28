@@ -33,7 +33,7 @@ pub trait Store {
     fn read(&self, archive: u8, group: u32) -> Result<Vec<u8>, StoreError>;
 }
 
-pub fn store_open(path: &str) -> Result<Box<dyn Store>, StoreError> {
+pub fn store_open(path: &str) -> Result<Box<dyn Store + Send + Sync>, StoreError> {
     let has_data_file = Path::new(&path).join(DATA_PATH).exists();
     let has_legacy_data_file = Path::new(path).join(LEGACY_DATA_PATH).exists();
 
