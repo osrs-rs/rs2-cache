@@ -130,6 +130,8 @@ impl Cache {
         buf: T,
         key: Option<[u32; 4]>,
     ) -> Result<(), CacheError> {
+        // TODO OR NOTE: This may require Rc<RefCell<...>> to work properly in terms of openrs2's design. Investigate if it is necessary or not.
+
         //check_archive(archive);
         //self.create_or_get_archive(archive).write(group, file, buf); //.write(group, file, buf, key);
         Ok(self
