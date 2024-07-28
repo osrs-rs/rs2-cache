@@ -121,4 +121,29 @@ impl Cache {
             .ok_or(CacheError::ArchiveNotFound(archive))?
             .read_named_group(djb2_hash(group), file, xtea_keys, self.store.as_ref())?)
     }
+
+    pub fn write<T: AsRef<[u8]>>(
+        &mut self,
+        archive: u8,
+        group: u32,
+        file: u16,
+        buf: T,
+        key: Option<[u32; 4]>,
+    ) -> Result<(), CacheError> {
+        //check_archive(archive);
+        //self.create_or_get_archive(archive).write(group, file, buf); //.write(group, file, buf, key);
+        Ok(self
+            .archives
+            .get_mut(&archive)
+            .ok_or(CacheError::ArchiveNotFound(archive))?
+            .write(group, file, buf, key)?)
+    }
+
+    fn create_or_get_archive(&mut self, id: u8) -> &mut CacheArchive {
+        self.archives.get_mut(&id).unwrap()
+
+        //let archive = CacheArchive::new(id);
+        //self.archives.insert(id, archive);
+        //return self.archives.get_mut(&id).unwrap();
+    }
 }

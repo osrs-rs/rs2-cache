@@ -52,6 +52,13 @@ pub trait Archive {
     fn read_packed(&self, group: u32, store: &dyn Store) -> Result<Vec<u8>, ArchiveError>;
     fn verify_compressed(&self, buf: &[u8], entry: &Js5IndexEntry);
     fn verify_uncompressed(&self, buf: &[u8], entry: &Js5IndexEntry);
+    fn write<T: AsRef<[u8]>>(
+        &mut self,
+        group: u32,
+        file: u16,
+        buf: T,
+        key: Option<[u32; 4]>,
+    ) -> Result<(), ArchiveError>;
 }
 
 #[derive(Error, Debug)]

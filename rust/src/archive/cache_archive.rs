@@ -98,4 +98,14 @@ impl Archive for CacheArchive {
 
     // TODO: Implement
     fn verify_uncompressed(&self, _buf: &[u8], _entry: &Js5IndexEntry) {}
+
+    fn write<T: AsRef<[u8]>>(
+        &mut self,
+        group: u32,
+        file: u16,
+        buf: T,
+        key: Option<[u32; 4]>,
+    ) -> Result<(), ArchiveError> {
+        Ok(())
+    }
 }
