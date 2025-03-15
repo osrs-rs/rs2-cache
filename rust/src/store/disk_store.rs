@@ -131,7 +131,7 @@ impl Store for DiskStore {
     fn read(&self, archive: u8, group: u32) -> Result<Vec<u8>, StoreError> {
         let entry = self.read_index_entry(archive, group)?;
         if entry.block == 0 {
-            return Err(StoreError::GroupTooShort);
+            return Err(StoreError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "File not found")));
         }
 
         let mut buf = Vec::with_capacity(entry.size as usize);

@@ -42,7 +42,9 @@ impl Js5Compression {
         }
 
         let type_id = input_ref.read_u8()?;
-        // TODO: Check if type_id is correct here and error if not in range 0-3
+        if type_id > 3 {
+            return Err(Js5CompressionError::UnknownCompressionType(type_id));
+        }
 
         let len = input_ref.read_i32()?;
         if len < 0 {
